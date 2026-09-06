@@ -39,12 +39,15 @@ A MirvDesk client bootstrap UI is planned so this curl step can disappear.
 
 - `GET /healthz`
 - `GET /api/version`
+- `GET /.well-known/mirvdesk`
 - `GET /api/login-options`
 - `GET /api/bootstrap/status`
 - `POST /api/bootstrap`
 - `POST /api/login`
 - `POST /api/currentUser`
 - `POST /api/logout`
+- `GET /api/ab`
+- `POST /api/ab`
 ## Security notes
 
 Passwords are stored with Argon2id. Session tokens are random 256-bit values; only their SHA-256 hashes are stored server-side. Sessions currently expire after 30 days.
@@ -52,6 +55,12 @@ Passwords are stored with Argon2id. Session tokens are random 256-bit values; on
 ## Current status
 
 The single-container runtime, RustDesk Server OSS 1.1.16 integration, bootstrap, account login, current-user lookup and logout are implemented. Address-book and group endpoints are next.
+
+## Runtime discovery
+
+MirvDesk clients are generic builds: no ID server, relay server, API URL, or server public key is baked into CI. Enter the public MirvDesk server URL in the client and it fetches `/.well-known/mirvdesk`.
+
+Behind nginx, the server derives its public URL from `Host` and `X-Forwarded-Proto`. `MIRVDESK_PUBLIC_URL`, `MIRVDESK_ID_SERVER`, `MIRVDESK_RELAY_SERVER`, and `MIRVDESK_API_PUBLIC_URL` are optional overrides for non-standard deployments.
 
 ## Upstream and license
 

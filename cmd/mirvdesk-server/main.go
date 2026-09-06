@@ -95,6 +95,7 @@ func (s *state) handler() http.Handler {
 			"rustdesk_server": rustDeskServerVersion,
 		})
 	})
+	mux.HandleFunc("GET /.well-known/mirvdesk", s.handleDiscovery)
 	mux.HandleFunc("GET /api/login-options", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("[]\n"))
@@ -104,6 +105,8 @@ func (s *state) handler() http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/currentUser", s.handleCurrentUser)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	mux.HandleFunc("GET /api/ab", s.handleAddressBookGet)
+	mux.HandleFunc("POST /api/ab", s.handleAddressBookPut)
 	return mux
 }
 

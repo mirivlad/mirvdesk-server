@@ -82,3 +82,40 @@ func TestBadPasswordRejected(t *testing.T) {
 		t.Fatalf("unexpected response: %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestLegacyAddressBookRoundTrip(t *testing.T) {
+	st, stg := newTestState(t)
+	if _, err := stg.createFirstAdmin(stg.bootstrapToken, "admin", "very-strong-password", ""); err != nil {
+		t.Fatal(err)
+	}
+	login := request(t, st.handler(), http.MethodPost, "/api/login",
+		`{"username":"admin","password":"very-strong-password","type":"account","deviceInfo":{}}`, "")
+	var payload map[string]any
+	if err := json.Unmarshal(login.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	token, _ := payload["access_token"].(string)
+	if token == "" {
+		t.Fatal("missing access token")
+	}
+
+	rr := request(t, st.handler(), http.MethodGet, "/api/ab", "", token)
+	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "null" {
+		t.Fatalf("initial address book: %d %s", rr.Code, rr.Body.String())
+	}
+
+	body := `{"data":"{\"tags\":[\"prod\"],\"peers\":[{\"id\":\"123456789\",\"alias\":\"server\"}]}"}`
+	rr = request(t, st.handler(), http.MethodPost, "/api/ab", body, token)
+	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "null" {
+		t.Fatalf("save address book: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, st.handler(), http.MethodGet, "/api/ab", "", token)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `123456789`) {
+		t.Fatalf("load address book: %d %s", rr.Code, rr.Body.String())
+	}
+
+	unauthorized := request(t, st.handler(), http.MethodGet, "/api/ab", "", "")
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized address book: %d %s", unauthorized.Code, unauthorized.Body.String())
+	}
+}

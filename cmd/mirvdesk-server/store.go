@@ -82,6 +82,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+CREATE TABLE IF NOT EXISTS address_books (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `
 	_, err := s.db.Exec(schema)
 	return err
