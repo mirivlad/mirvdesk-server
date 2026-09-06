@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=rustdesk /usr/bin/hbbs /usr/local/bin/hbbs
 COPY --from=rustdesk /usr/bin/hbbr /usr/local/bin/hbbr
 COPY --from=build /out/mirvdesk-server /usr/local/bin/mirvdesk-server
+RUN ln -s /usr/local/bin/mirvdesk-server /usr/local/bin/mirvdesk-admin
 VOLUME ["/data"]
 EXPOSE 21114/tcp 21115/tcp 21116/tcp 21116/udp 21117/tcp
 ENTRYPOINT ["/usr/local/bin/mirvdesk-server"]

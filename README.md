@@ -21,19 +21,23 @@ The recommended Linux deployment uses `network_mode: host`.
 Open TCP 21115, TCP+UDP 21116 and TCP 21117 to clients. The API listens on `127.0.0.1:21114` and is intended to be published through nginx HTTPS.
 
 See [Portainer + nginx](docs/portainer-nginx.md).
-## First administrator
+## Administrator utility
 
-On a fresh `/data` volume MirvDesk Server creates `/data/bootstrap.token` (mode `0600`) and prints the same one-time token to the container log.
-Use it once to create the first administrator:
+Create the first administrator locally inside the running container:
 
 ```bash
-curl -X POST https://api.example.com/api/bootstrap \
-  -H 'Content-Type: application/json' \
-  -d '{"token":"TOKEN","username":"admin","password":"change-this-password","display_name":"Administrator"}'
+docker exec -it mirvdesk-server mirvdesk-admin
 ```
 
-After the first administrator is created the bootstrap token file is deleted and the endpoint cannot create another administrator.
-A MirvDesk client bootstrap UI is planned so this curl step can disappear.
+On an empty database the utility immediately asks for the login, optional display name, and password twice. Once users exist, the same command opens the administration menu. Password input is hidden and is never passed through command-line arguments or environment variables.
+
+The same utility can reset a forgotten password for any existing user:
+
+```bash
+docker exec -it mirvdesk-server mirvdesk-admin passwd USERNAME
+```
+
+A password reset revokes all existing sessions for that user. `mirvdesk-admin list` lists the known accounts. The administrator utility works directly against `/data/mirvdesk.db`; there is no public HTTP bootstrap endpoint.
 
 ## API available now
 
@@ -41,8 +45,6 @@ A MirvDesk client bootstrap UI is planned so this curl step can disappear.
 - `GET /api/version`
 - `GET /.well-known/mirvdesk`
 - `GET /api/login-options`
-- `GET /api/bootstrap/status`
-- `POST /api/bootstrap`
 - `POST /api/login`
 - `POST /api/currentUser`
 - `POST /api/logout`
@@ -54,7 +56,7 @@ Passwords are stored with Argon2id. Session tokens are random 256-bit values; on
 
 ## Current status
 
-The single-container runtime, RustDesk Server OSS 1.1.16 integration, bootstrap, account login, current-user lookup and logout are implemented. Address-book and group endpoints are next.
+The single-container runtime, RustDesk Server OSS 1.1.16 integration, local administrator utility, account login, current-user lookup, logout, runtime discovery, and personal address-book synchronization are implemented. Shared address books and groups are next.
 
 ## Runtime discovery
 

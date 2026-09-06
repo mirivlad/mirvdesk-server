@@ -8,6 +8,14 @@ This lets `hbbs` and `hbbr` see the real client IP and lets a host nginx proxy r
 Create a new Stack and paste `compose.yml`. The stack uses one named volume, `mirvdesk-data`.
 Open TCP 21115, TCP+UDP 21116, and TCP 21117 in the host firewall/NAT. Do not proxy these ports through nginx.
 
+After the first start, open the `mirvdesk-server` container console in Portainer and run:
+
+```bash
+mirvdesk-admin
+```
+
+Use the same utility later to reset a forgotten account password.
+
 ## nginx API proxy
 
 The API binds to `127.0.0.1:21114` by default, so it is not directly exposed to the Internet.
@@ -28,4 +36,4 @@ server {
 }
 ```
 
-Use your existing certificate/Certbot setup for TLS. The MirvDesk client should be built/configured with `https://api.example.com` as its API server.
+Use your existing certificate/Certbot setup for TLS. In MirvDesk Client enter `https://api.example.com` as the MirvDesk Server address; runtime discovery fills in the ID server, relay server, API URL, and public key automatically.

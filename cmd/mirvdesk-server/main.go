@@ -100,8 +100,6 @@ func (s *state) handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("[]\n"))
 	})
-	mux.HandleFunc("GET /api/bootstrap/status", s.handleBootstrapStatus)
-	mux.HandleFunc("POST /api/bootstrap", s.handleBootstrap)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/currentUser", s.handleCurrentUser)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
@@ -118,6 +116,9 @@ func env(key, fallback string) string {
 }
 func main() {
 	syscall.Umask(0077)
+	if runAdminCLIIfRequested() {
+		return
+	}
 	dataDir := env("MIRVDESK_DATA_DIR", "/data")
 	rustDir := filepath.Join(dataDir, "rustdesk")
 	if err := os.MkdirAll(rustDir, 0700); err != nil {
@@ -128,10 +129,9 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 	defer stg.close()
-	if stg.bootstrapRequired() {
-		log.Printf("MirvDesk bootstrap token: %s", stg.bootstrapToken)
+	if n, err := stg.userCount(); err == nil && n == 0 {
+		log.Printf("No users configured. Run mirvdesk-admin inside the container to create the first administrator.")
 	}
-
 	hbbs := &child{name: "hbbs", path: env("MIRVDESK_HBBS_BIN", "/usr/local/bin/hbbs"), dir: rustDir}
 	hbbr := &child{name: "hbbr", path: env("MIRVDESK_HBBR_BIN", "/usr/local/bin/hbbr"), dir: rustDir}
 	hbbrDone, err := hbbr.start()

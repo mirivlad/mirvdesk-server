@@ -8,13 +8,6 @@ import (
 	"strings"
 )
 
-type bootstrapRequest struct {
-	Token       string `json:"token"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name"`
-}
-
 type loginRequest struct {
 	Username   string         `json:"username"`
 	Password   string         `json:"password"`
@@ -48,31 +41,9 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(h[7:])
 }
 
-func (s *state) handleBootstrapStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"required": s.store.bootstrapRequired()})
-}
-
-func (s *state) handleBootstrap(w http.ResponseWriter, r *http.Request) {
-	if !s.store.bootstrapRequired() {
-		writeAPIError(w, http.StatusConflict, "bootstrap is already complete")
-		return
-	}
-	var req bootstrapRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid request")
-		return
-	}
-	u, err := s.store.createFirstAdmin(req.Token, req.Username, req.Password, req.DisplayName)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "user": u})
-}
-
 func (s *state) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if s.store.bootstrapRequired() {
-		writeAPIError(w, http.StatusServiceUnavailable, "server setup is required")
+	if n, err := s.store.userCount(); err == nil && n == 0 {
+		writeAPIError(w, http.StatusServiceUnavailable, "server setup is required; run mirvdesk-admin")
 		return
 	}
 	var req loginRequest

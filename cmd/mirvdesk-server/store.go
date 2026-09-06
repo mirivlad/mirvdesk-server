@@ -29,10 +29,8 @@ type user struct {
 	IsAdmin     bool   `json:"is_admin"`
 }
 type store struct {
-	db             *sql.DB
-	mu             sync.Mutex
-	bootstrapToken string
-	bootstrapPath  string
+	db *sql.DB
+	mu sync.Mutex
 }
 
 func openStore(dataDir string) (*store, error) {
@@ -49,12 +47,9 @@ func openStore(dataDir string) (*store, error) {
 		db.Close()
 		return nil, err
 	}
-	st := &store{db: db, bootstrapPath: filepath.Join(dataDir, "bootstrap.token")}
+	st := &store{db: db}
+	_ = os.Remove(filepath.Join(dataDir, "bootstrap.token"))
 	if err := st.migrate(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := st.ensureBootstrapToken(); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -97,28 +92,6 @@ func (s *store) userCount() (int, error) {
 	return n, err
 }
 
-func (s *store) ensureBootstrapToken() error {
-	n, err := s.userCount()
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		_ = os.Remove(s.bootstrapPath)
-		return nil
-	}
-	if b, err := os.ReadFile(s.bootstrapPath); err == nil {
-		s.bootstrapToken = strings.TrimSpace(string(b))
-		if s.bootstrapToken != "" {
-			return nil
-		}
-	}
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return err
-	}
-	s.bootstrapToken = base64.RawURLEncoding.EncodeToString(b)
-	return os.WriteFile(s.bootstrapPath, []byte(s.bootstrapToken+"\n"), 0600)
-}
 func hashPassword(password string) (string, error) {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
@@ -158,13 +131,10 @@ func verifyPassword(encoded, password string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
-func (s *store) createFirstAdmin(token, username, password, displayName string) (user, error) {
+func (s *store) createAdmin(username, password, displayName string) (user, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var zero user
-	if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.bootstrapToken)) != 1 {
-		return zero, errors.New("invalid bootstrap token")
-	}
 	username = strings.TrimSpace(username)
 	displayName = strings.TrimSpace(displayName)
 	if len(username) < 3 || len(username) > 64 {
@@ -172,10 +142,6 @@ func (s *store) createFirstAdmin(token, username, password, displayName string) 
 	}
 	if len(password) < 10 {
 		return zero, errors.New("password must be at least 10 characters")
-	}
-	n, err := s.userCount()
-	if err != nil || n != 0 {
-		return zero, errors.New("bootstrap is already complete")
 	}
 	hash, err := hashPassword(password)
 	if err != nil {
@@ -187,10 +153,59 @@ VALUES(?,?,?,?,?,?)`, username, hash, displayName, 1, 1, time.Now().Unix())
 		return zero, err
 	}
 	id, _ := res.LastInsertId()
-	s.bootstrapToken = ""
-	_ = os.Remove(s.bootstrapPath)
 	return user{ID: id, Name: username, DisplayName: displayName, Status: 1, IsAdmin: true}, nil
 }
+
+func (s *store) setPassword(username, password string) error {
+	username = strings.TrimSpace(username)
+	if len(password) < 10 {
+		return errors.New("password must be at least 10 characters")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE users SET password_hash=? WHERE username=?`, hash, username)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("user not found")
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE username=?)`, username); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *store) listUsers() ([]user, error) {
+	rows, err := s.db.Query(`SELECT id,username,display_name,is_admin,status FROM users ORDER BY username COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []user
+	for rows.Next() {
+		var u user
+		var admin int
+		if err := rows.Scan(&u.ID, &u.Name, &u.DisplayName, &admin, &u.Status); err != nil {
+			return nil, err
+		}
+		u.IsAdmin = admin != 0
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (s *store) authenticate(username, password string) (user, error) {
 	var u user
 	var hash string
@@ -253,11 +268,6 @@ func (s *store) revokeSession(raw string) error {
 	h := sha256.Sum256([]byte(raw))
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE token_hash=?`, h[:])
 	return err
-}
-
-func (s *store) bootstrapRequired() bool {
-	n, err := s.userCount()
-	return err == nil && n == 0
 }
 
 func (s *store) close() error {
