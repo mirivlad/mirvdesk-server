@@ -8,8 +8,8 @@ It packages the RustDesk OSS rendezvous server (`hbbs`), relay server (`hbbr`), 
 - one image and one Portainer stack;
 - one persistent `/data` volume;
 - direct RustDesk transport ports, with the HTTP API behind an existing nginx reverse proxy;
-- a small open API for client login, address books, groups, and synchronization;
-- stay compatible with the open MirvDesk/RustDesk client wherever practical.
+- account login, address books, groups, and synchronization without RustDesk Server Pro;
+- stay close to the open RustDesk client wherever practical.
 
 ## Quick start
 
@@ -21,17 +21,37 @@ The recommended Linux deployment uses `network_mode: host`.
 Open TCP 21115, TCP+UDP 21116 and TCP 21117 to clients. The API listens on `127.0.0.1:21114` and is intended to be published through nginx HTTPS.
 
 See [Portainer + nginx](docs/portainer-nginx.md).
+## First administrator
 
-## Current status
+On a fresh `/data` volume MirvDesk Server creates `/data/bootstrap.token` (mode `0600`) and prints the same one-time token to the container log.
+Use it once to create the first administrator:
 
-The first bootstrap provides the single-container process supervisor, `hbbs`/`hbbr` 1.1.16, health/version endpoints, Docker Compose, and GHCR build workflow.
-Account authentication and address-book APIs are the next implementation step.
+```bash
+curl -X POST https://api.example.com/api/bootstrap \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"TOKEN","username":"admin","password":"change-this-password","display_name":"Administrator"}'
+```
+
+After the first administrator is created the bootstrap token file is deleted and the endpoint cannot create another administrator.
+A MirvDesk client bootstrap UI is planned so this curl step can disappear.
 
 ## API available now
 
 - `GET /healthz`
 - `GET /api/version`
 - `GET /api/login-options`
+- `GET /api/bootstrap/status`
+- `POST /api/bootstrap`
+- `POST /api/login`
+- `POST /api/currentUser`
+- `POST /api/logout`
+## Security notes
+
+Passwords are stored with Argon2id. Session tokens are random 256-bit values; only their SHA-256 hashes are stored server-side. Sessions currently expire after 30 days.
+
+## Current status
+
+The single-container runtime, RustDesk Server OSS 1.1.16 integration, bootstrap, account login, current-user lookup and logout are implemented. Address-book and group endpoints are next.
 
 ## Upstream and license
 

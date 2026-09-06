@@ -1,13 +1,15 @@
 ARG RUSTDESK_SERVER_VERSION=1.1.16
+ARG BUILDPLATFORM=linux/amd64
 FROM rustdesk/rustdesk-server:${RUSTDESK_SERVER_VERSION} AS rustdesk
 
-FROM golang:1.24-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ARG VERSION=dev
 ARG RUSTDESK_SERVER_VERSION=1.1.16
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd ./cmd
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.rustDeskServerVersion=${RUSTDESK_SERVER_VERSION}" \

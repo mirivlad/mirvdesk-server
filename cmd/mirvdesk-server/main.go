@@ -68,8 +68,9 @@ func (c *child) stop() {
 }
 
 type state struct {
-	hbbs *child
-	hbbr *child
+	hbbs  *child
+	hbbr  *child
+	store *store
 }
 
 func (s *state) handler() http.Handler {
@@ -98,6 +99,11 @@ func (s *state) handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("[]\n"))
 	})
+	mux.HandleFunc("GET /api/bootstrap/status", s.handleBootstrapStatus)
+	mux.HandleFunc("POST /api/bootstrap", s.handleBootstrap)
+	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("POST /api/currentUser", s.handleCurrentUser)
+	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	return mux
 }
 
@@ -108,10 +114,19 @@ func env(key, fallback string) string {
 	return fallback
 }
 func main() {
+	syscall.Umask(0077)
 	dataDir := env("MIRVDESK_DATA_DIR", "/data")
 	rustDir := filepath.Join(dataDir, "rustdesk")
 	if err := os.MkdirAll(rustDir, 0700); err != nil {
 		log.Fatal(err)
+	}
+	stg, err := openStore(dataDir)
+	if err != nil {
+		log.Fatalf("open store: %v", err)
+	}
+	defer stg.close()
+	if stg.bootstrapRequired() {
+		log.Printf("MirvDesk bootstrap token: %s", stg.bootstrapToken)
 	}
 
 	hbbs := &child{name: "hbbs", path: env("MIRVDESK_HBBS_BIN", "/usr/local/bin/hbbs"), dir: rustDir}
@@ -126,7 +141,7 @@ func main() {
 		log.Fatalf("start hbbs: %v", err)
 	}
 
-	st := &state{hbbs: hbbs, hbbr: hbbr}
+	st := &state{hbbs: hbbs, hbbr: hbbr, store: stg}
 	api := &http.Server{
 		Addr:              env("MIRVDESK_API_ADDR", "127.0.0.1:21114"),
 		Handler:           st.handler(),
