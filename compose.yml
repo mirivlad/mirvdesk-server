@@ -1,0 +1,14 @@
+services:
+  mirvdesk-server:
+    image: ghcr.io/mirivlad/mirvdesk-server:latest
+    container_name: mirvdesk-server
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      MIRVDESK_API_ADDR: "127.0.0.1:21114"
+      MIRVDESK_DATA_DIR: "/data"
+    volumes:
+      - mirvdesk-data:/data
+
+volumes:
+  mirvdesk-data:
