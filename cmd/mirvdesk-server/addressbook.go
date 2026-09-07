@@ -22,7 +22,7 @@ func (s *state) handleAddressBookGet(w http.ResponseWriter, r *http.Request) {
 	err = s.store.db.QueryRow(`SELECT data FROM address_books WHERE user_id=?`, u.ID).Scan(&data)
 	if errors.Is(err, sql.ErrNoRows) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("null\n"))
+		_, _ = w.Write([]byte("null"))
 		return
 	}
 	if err != nil {
@@ -59,5 +59,5 @@ ON CONFLICT(user_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updat
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte("null\n"))
+	_, _ = w.Write([]byte("null"))
 }

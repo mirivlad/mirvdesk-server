@@ -104,12 +104,12 @@ func TestLegacyAddressBookRoundTrip(t *testing.T) {
 		t.Fatal("missing access token")
 	}
 	rr := request(t, st.handler(), http.MethodGet, "/api/ab", "", token)
-	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "null" {
+	if rr.Code != http.StatusOK || rr.Body.String() != "null" {
 		t.Fatalf("initial address book: %d %s", rr.Code, rr.Body.String())
 	}
 	body := `{"data":"{\"tags\":[\"prod\"],\"peers\":[{\"id\":\"123456789\",\"alias\":\"server\"}]}"}`
 	rr = request(t, st.handler(), http.MethodPost, "/api/ab", body, token)
-	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "null" {
+	if rr.Code != http.StatusOK || rr.Body.String() != "null" {
 		t.Fatalf("save address book: %d %s", rr.Code, rr.Body.String())
 	}
 	rr = request(t, st.handler(), http.MethodGet, "/api/ab", "", token)
