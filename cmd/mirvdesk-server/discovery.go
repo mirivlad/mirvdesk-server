@@ -10,12 +10,13 @@ import (
 )
 
 type discoveryResponse struct {
-	Schema      int    `json:"schema"`
-	IDServer    string `json:"id_server"`
-	RelayServer string `json:"relay_server"`
-	APIServer   string `json:"api_server"`
-	Key         string `json:"key"`
-	Version     string `json:"version"`
+	Schema       int      `json:"schema"`
+	IDServer     string   `json:"id_server"`
+	RelayServer  string   `json:"relay_server"`
+	APIServer    string   `json:"api_server"`
+	Key          string   `json:"key"`
+	Version      string   `json:"version"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 func firstForwarded(value string) string {
@@ -66,11 +67,12 @@ func (s *state) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, discoveryResponse{
-		Schema:      1,
-		IDServer:    idServer,
-		RelayServer: relayServer,
-		APIServer:   strings.TrimRight(apiServer, "/"),
-		Key:         strings.TrimSpace(string(keyBytes)),
-		Version:     version,
+		Schema:       1,
+		IDServer:     idServer,
+		RelayServer:  relayServer,
+		APIServer:    strings.TrimRight(apiServer, "/"),
+		Key:          strings.TrimSpace(string(keyBytes)),
+		Version:      version,
+		Capabilities: []string{"groups"},
 	})
 }

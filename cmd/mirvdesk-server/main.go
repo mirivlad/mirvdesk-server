@@ -105,6 +105,9 @@ func (s *state) handler() http.Handler {
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/ab", s.handleAddressBookGet)
 	mux.HandleFunc("POST /api/ab", s.handleAddressBookPut)
+	mux.HandleFunc("GET /api/device-group/accessible", s.handleAccessibleDeviceGroups)
+	mux.HandleFunc("GET /api/users", s.handleAccessibleUsers)
+	mux.HandleFunc("GET /api/peers", s.handleAccessiblePeers)
 	return mux
 }
 

@@ -39,6 +39,18 @@ docker exec -it mirvdesk-server mirvdesk-admin passwd USERNAME
 
 A password reset revokes all existing sessions for that user. `mirvdesk-admin list` lists the known accounts. The administrator utility works directly against `/data/mirvdesk.db`; there is no public HTTP bootstrap endpoint.
 
+Regular users and device groups are managed locally as well:
+
+```bash
+docker exec -it mirvdesk-server mirvdesk-admin create-user
+docker exec -it mirvdesk-server mirvdesk-admin group-create Operations
+docker exec -it mirvdesk-server mirvdesk-admin devices
+docker exec -it mirvdesk-server mirvdesk-admin device-group 123456789 Operations
+docker exec -it mirvdesk-server mirvdesk-admin group-add-user Operations alice
+```
+
+A device is registered automatically after its owner logs in from that MirvDesk client. `devices` shows known peer IDs, owners and current group assignment. Use `device-group PEER_ID none` to clear an assignment and `group-remove-user GROUP LOGIN` to revoke access. Administrators can see all registered devices; regular users see their own devices plus devices in groups granted to them.
+
 ## API available now
 
 - `GET /healthz`
@@ -50,17 +62,23 @@ A password reset revokes all existing sessions for that user. `mirvdesk-admin li
 - `POST /api/logout`
 - `GET /api/ab`
 - `POST /api/ab`
+- `GET /api/device-group/accessible`
+- `GET /api/users`
+- `GET /api/peers`
+
+The last three endpoints implement the RustDesk-compatible Accessible devices / Groups view used by MirvDesk 1.6+.
+
 ## Security notes
 
 Passwords are stored with Argon2id. Session tokens are random 256-bit values; only their SHA-256 hashes are stored server-side. Sessions currently expire after 30 days.
 
 ## Current status
 
-The single-container runtime, RustDesk Server OSS 1.1.16 integration, local administrator utility, account login, current-user lookup, logout, runtime discovery, and personal address-book synchronization are implemented. Shared address books and groups are next.
+The single-container runtime, RustDesk Server OSS 1.1.16 integration, local administrator utility, account login, current-user lookup, logout, runtime discovery, personal address-book synchronization, registered devices and Accessible devices / Groups are implemented. Shared address books remain future work.
 
 ## Runtime discovery
 
-MirvDesk clients are generic builds: no ID server, relay server, API URL, or server public key is baked into CI. Enter the public MirvDesk server URL in the client and it fetches `/.well-known/mirvdesk`.
+MirvDesk clients embed only the base URL of the self-hosted MirvDesk Server selected by the person compiling them. The build requires `MIRVDESK_SERVER_URL`; there is deliberately no project-wide public/default server. On first launch the client fetches `/.well-known/mirvdesk` from that URL and receives the ID server, relay server, API URL, public key and supported capabilities.
 
 Behind nginx, the server derives its public URL from `Host` and `X-Forwarded-Proto`. `MIRVDESK_PUBLIC_URL`, `MIRVDESK_ID_SERVER`, `MIRVDESK_RELAY_SERVER`, and `MIRVDESK_API_PUBLIC_URL` are optional overrides for non-standard deployments.
 

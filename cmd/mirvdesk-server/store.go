@@ -82,8 +82,40 @@ CREATE TABLE IF NOT EXISTS address_books (
   data TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS device_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  peer_id TEXT NOT NULL UNIQUE,
+  owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uuid TEXT NOT NULL DEFAULT '',
+  info TEXT NOT NULL DEFAULT '{}',
+  note TEXT NOT NULL DEFAULT '',
+  status INTEGER NOT NULL DEFAULT 1,
+  group_id INTEGER REFERENCES device_groups(id) ON DELETE SET NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_devices_owner_user_id ON devices(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_devices_group_id ON devices(group_id);
+CREATE TABLE IF NOT EXISTS device_group_members (
+  group_id INTEGER NOT NULL REFERENCES device_groups(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY(group_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_device_group_members_user_id ON device_group_members(user_id);
 `
-	_, err := s.db.Exec(schema)
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	// Existing installations already have device IDs in active/old sessions.
+	// Backfill them so upgrading the server does not require every client to log out first.
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
+SELECT device_id,user_id,device_uuid,'{}',1,created_at FROM sessions
+WHERE device_id<>'' AND id IN (SELECT MAX(id) FROM sessions WHERE device_id<>'' GROUP BY device_id)`)
 	return err
 }
 func (s *store) userCount() (int, error) {
@@ -131,7 +163,7 @@ func verifyPassword(encoded, password string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
-func (s *store) createAdmin(username, password, displayName string) (user, error) {
+func (s *store) createUser(username, password, displayName string, isAdmin bool) (user, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var zero user
@@ -147,13 +179,21 @@ func (s *store) createAdmin(username, password, displayName string) (user, error
 	if err != nil {
 		return zero, err
 	}
+	admin := 0
+	if isAdmin {
+		admin = 1
+	}
 	res, err := s.db.Exec(`INSERT INTO users(username,password_hash,display_name,is_admin,status,created_at)
-VALUES(?,?,?,?,?,?)`, username, hash, displayName, 1, 1, time.Now().Unix())
+VALUES(?,?,?,?,?,?)`, username, hash, displayName, admin, 1, time.Now().Unix())
 	if err != nil {
 		return zero, err
 	}
 	id, _ := res.LastInsertId()
-	return user{ID: id, Name: username, DisplayName: displayName, Status: 1, IsAdmin: true}, nil
+	return user{ID: id, Name: username, DisplayName: displayName, Status: 1, IsAdmin: isAdmin}, nil
+}
+
+func (s *store) createAdmin(username, password, displayName string) (user, error) {
+	return s.createUser(username, password, displayName, true)
 }
 
 func (s *store) setPassword(username, password string) error {

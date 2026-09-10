@@ -60,6 +60,10 @@ func (s *state) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+	if err := s.store.upsertDevice(u.ID, req.ID, req.UUID, req.DeviceInfo); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to register device")
+		return
+	}
 	token, err := s.store.createSession(u.ID, req.ID, req.UUID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to create session")
