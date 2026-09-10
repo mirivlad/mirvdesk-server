@@ -51,6 +51,8 @@ docker exec -it mirvdesk-server mirvdesk-admin group-add-user Operations alice
 
 A device is registered automatically after its owner logs in from that MirvDesk client. `devices` shows known peer IDs, owners and current group assignment. Use `device-group PEER_ID none` to clear an assignment and `group-remove-user GROUP LOGIN` to revoke access. Administrators can see all registered devices; regular users see their own devices plus devices in groups granted to them.
 
+The 1.6 group storage is a baseline and currently assigns at most one group to a device. The next administration milestone migrates device/group membership to many-to-many, so a device may belong to several groups and a user may see several groups. This transitional schema is not intended to become a permanent API contract.
+
 ## API available now
 
 - `GET /healthz`
@@ -81,6 +83,12 @@ The single-container runtime, RustDesk Server OSS 1.1.16 integration, local admi
 MirvDesk clients embed only the base URL of the self-hosted MirvDesk Server selected by the person compiling them. The build requires `MIRVDESK_SERVER_URL`; there is deliberately no project-wide public/default server. On first launch the client fetches `/.well-known/mirvdesk` from that URL and receives the ID server, relay server, API URL, public key and supported capabilities.
 
 Behind nginx, the server derives its public URL from `Host` and `X-Forwarded-Proto`. `MIRVDESK_PUBLIC_URL`, `MIRVDESK_ID_SERVER`, `MIRVDESK_RELAY_SERVER`, and `MIRVDESK_API_PUBLIC_URL` are optional overrides for non-standard deployments.
+
+## Roadmap and upstream compatibility
+
+The cross-repository roadmap is maintained in the client repository: [MirvDesk roadmap](https://github.com/mirivlad/mirvdesk-client/blob/main/docs/ROADMAP.md). The planned primary administration UI is an authenticated window inside the MirvDesk desktop client, backed by a server-side admin API. A web admin UI, if added later, should reuse that same API rather than duplicate business logic.
+
+MirvDesk-specific management endpoints should be namespaced so they do not unnecessarily collide with future RustDesk APIs. Existing RustDesk-compatible endpoints used by Accessible devices / Groups should retain their compatible shapes where practical. See the client-side [upstream compatibility policy](https://github.com/mirivlad/mirvdesk-client/blob/main/docs/UPSTREAM_COMPATIBILITY.md).
 
 ## Upstream and license
 
