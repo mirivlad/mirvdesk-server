@@ -24,6 +24,9 @@ func (s *state) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *state) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/users", s.adminOnly(s.adminListUsers))
+	mux.HandleFunc("POST /api/admin/users", s.adminOnly(s.adminCreateUser))
+	mux.HandleFunc("PATCH /api/admin/users/{username}/status", s.adminOnly(s.adminSetUserStatus))
+	mux.HandleFunc("PUT /api/admin/users/{username}/password", s.adminOnly(s.adminResetUserPassword))
 	mux.HandleFunc("GET /api/admin/audit", s.adminOnly(s.adminListAudit))
 	mux.HandleFunc("GET /api/admin/groups", s.adminOnly(s.adminListGroups))
 	mux.HandleFunc("POST /api/admin/groups", s.adminOnly(s.adminCreateGroup))

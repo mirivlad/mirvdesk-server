@@ -49,3 +49,12 @@ retained in query), including actor, action, resource ID and timestamp.
 Credentials, session tokens and passwords are never part of these events.
 Records are stored in the persistent SQLite database; this is a basic
 operational log, not a tamper-proof security audit system.
+
+
+### Administrator user lifecycle
+
+- POST /api/admin/users with JSON {"username":"alice","display_name":"Alice","password":"at-least-10-chars"} creates a **non-admin** account. Only the local CLI can elevate or create administrators.
+- PATCH /api/admin/users/{username}/status with JSON {"enabled":false} disables an account, revokes existing sessions and prevents login. Setting true enables login but does not restore old sessions.
+- PUT /api/admin/users/{username}/password with JSON {"password":"new-strong-password"} resets credentials, invalidating every current session for that user.
+
+An administrator cannot disable their own account or the last active administrator. All mutations require server-validated administrator sessions and are logged with no password contents.
