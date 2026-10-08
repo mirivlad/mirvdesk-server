@@ -55,11 +55,18 @@ func (s *state) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "unsupported login type")
 		return
 	}
+	accountKey, sourceKey := loginAttemptKeys(r, req.Username)
+	if wait := s.loginLimiter.check(accountKey, sourceKey); wait > 0 {
+		writeLoginRateLimit(w, wait)
+		return
+	}
 	u, err := s.store.authenticate(req.Username, req.Password)
 	if err != nil {
+		s.loginLimiter.failure(accountKey, sourceKey)
 		writeAPIError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+	s.loginLimiter.success(accountKey)
 	if err := s.store.upsertDevice(u.ID, req.ID, req.UUID, req.DeviceInfo); err != nil {
 		if errors.Is(err, errDeviceOwned) {
 			writeAPIError(w, http.StatusConflict, "device already registered to another account")

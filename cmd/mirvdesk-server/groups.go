@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -17,13 +16,15 @@ type deviceGroup struct {
 }
 
 type peerPayload struct {
-	ID              string         `json:"id"`
-	Info            map[string]any `json:"info"`
-	Status          int            `json:"status"`
-	User            string         `json:"user"`
-	UserName        string         `json:"user_name"`
-	DeviceGroupName string         `json:"device_group_name"`
-	Note            string         `json:"note"`
+	ID               string         `json:"id"`
+	Info             map[string]any `json:"info"`
+	Status           int            `json:"status"`
+	User             string         `json:"user"`
+	UserName         string         `json:"user_name"`
+	DeviceGroupName  string         `json:"device_group_name"`
+	DeviceGroupNames []string       `json:"device_group_names,omitempty"`
+	Note             string         `json:"note"`
+	LastAccountLogin int64          `json:"last_account_login"`
 }
 
 func parsePage(r *http.Request) (current, pageSize int) {
@@ -94,6 +95,55 @@ func (s *store) createDeviceGroup(name string) error {
 	return err
 }
 
+// Group IDs stay stable on rename, preserving device links and memberships.
+func (s *store) renameDeviceGroup(oldName, newName string) error {
+	oldName, newName = strings.TrimSpace(oldName), strings.TrimSpace(newName)
+	if len(newName) < 1 || len(newName) > 80 {
+		return errors.New("group name must be 1-80 characters")
+	}
+	result, err := s.db.Exec("UPDATE device_groups SET name=? WHERE name=?", newName, oldName)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("group not found")
+	}
+	return nil
+}
+
+func (s *store) deleteDeviceGroup(groupName string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("DELETE FROM device_groups WHERE name=?", strings.TrimSpace(groupName))
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("group not found")
+	}
+	// ON DELETE SET NULL clears the removed primary group; choose a remaining
+	// linked group so 1.6.x clients continue seeing a useful primary group.
+	_, err = tx.Exec(`UPDATE devices
+SET group_id=(SELECT MIN(link.group_id) FROM device_group_devices link WHERE link.device_id=devices.id)
+WHERE group_id IS NULL AND EXISTS(
+  SELECT 1 FROM device_group_devices link WHERE link.device_id=devices.id)`)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *store) addUserToDeviceGroup(groupName, username string) error {
 	res, err := s.db.Exec(`INSERT OR IGNORE INTO device_group_members(group_id,user_id)
 SELECT g.id,u.id FROM device_groups g, users u WHERE g.name=? AND u.username=?`, strings.TrimSpace(groupName), strings.TrimSpace(username))
@@ -124,25 +174,102 @@ func (s *store) removeUserFromDeviceGroup(groupName, username string) error {
 	return nil
 }
 
+// setDeviceGroup retains the legacy single-group replacement contract.
 func (s *store) setDeviceGroup(peerID, groupName string) error {
-	peerID = strings.TrimSpace(peerID)
 	groupName = strings.TrimSpace(groupName)
-	var res sql.Result
-	var err error
 	if groupName == "" || groupName == "-" || strings.EqualFold(groupName, "none") {
-		res, err = s.db.Exec(`UPDATE devices SET group_id=NULL WHERE peer_id=?`, peerID)
-	} else {
-		res, err = s.db.Exec(`UPDATE devices SET group_id=(SELECT id FROM device_groups WHERE name=?) WHERE peer_id=? AND EXISTS(SELECT 1 FROM device_groups WHERE name=?)`, groupName, peerID, groupName)
+		return s.setDeviceGroups(peerID, nil)
 	}
+	return s.setDeviceGroups(peerID, []string{groupName})
+}
+
+// setDeviceGroups changes all links atomically and maintains legacy primary ID.
+func (s *store) setDeviceGroups(peerID string, groupNames []string) error {
+	peerID = strings.TrimSpace(peerID)
+	if peerID == "" || len(groupNames) > 20 {
+		return errors.New("invalid device ID or too many groups")
+	}
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
+	defer tx.Rollback()
+	var deviceID int64
+	if err := tx.QueryRow("SELECT id FROM devices WHERE peer_id=?", peerID).Scan(&deviceID); err != nil {
+		return errors.New("device not found")
+	}
+	groupIDs := []int64{}
+	seen := map[int64]bool{}
+	for _, name := range groupNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return errors.New("group name is empty")
+		}
+		var id int64
+		if err := tx.QueryRow("SELECT id FROM device_groups WHERE name=?", name).Scan(&id); err != nil {
+			return errors.New("group not found")
+		}
+		if !seen[id] {
+			groupIDs = append(groupIDs, id)
+			seen[id] = true
+		}
+	}
+	if _, err := tx.Exec("DELETE FROM device_group_devices WHERE device_id=?", deviceID); err != nil {
+		return err
+	}
+	for _, id := range groupIDs {
+		if _, err := tx.Exec("INSERT INTO device_group_devices(group_id,device_id) VALUES(?,?)", id, deviceID); err != nil {
+			return err
+		}
+	}
+	var primary any
+	if len(groupIDs) > 0 {
+		primary = groupIDs[0]
+	}
+	if _, err := tx.Exec("UPDATE devices SET group_id=? WHERE id=?", primary, deviceID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *store) setDeviceNote(peerID, note string) error {
+	if len(note) > 1000 {
+		return errors.New("note must be 1000 characters or less")
+	}
+	result, err := s.db.Exec("UPDATE devices SET note=? WHERE peer_id=?", strings.TrimSpace(note), strings.TrimSpace(peerID))
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
 	if n == 0 {
-		return errors.New("device or group not found")
+		return errors.New("device not found")
 	}
 	return nil
 }
+
+func (s *store) deviceGroupNames(peerID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT g.name FROM device_group_devices link
+JOIN devices d ON d.id=link.device_id
+JOIN device_groups g ON g.id=link.group_id
+WHERE d.peer_id=? ORDER BY g.name COLLATE NOCASE`, strings.TrimSpace(peerID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
 func (s *store) listDeviceGroups() ([]deviceGroup, error) {
 	rows, err := s.db.Query(`SELECT id,name,note FROM device_groups ORDER BY name COLLATE NOCASE`)
 	if err != nil {
@@ -161,7 +288,10 @@ func (s *store) listDeviceGroups() ([]deviceGroup, error) {
 }
 
 func (s *store) listDevices() ([]peerPayload, error) {
-	return s.queryPeers(`SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note
+	return s.queryPeers(`SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,d.updated_at,
+COALESCE((SELECT json_group_array(name) FROM (
+ SELECT g2.name AS name FROM device_group_devices link2 JOIN device_groups g2 ON g2.id=link2.group_id
+ WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]')
 FROM devices d JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON g.id=d.group_id
 ORDER BY u.username COLLATE NOCASE,d.peer_id`)
 }
@@ -170,7 +300,7 @@ func (s *store) accessibleGroups(u user) ([]deviceGroup, error) {
 	query := `SELECT DISTINCT g.id,g.name,g.note FROM device_groups g`
 	args := []any{}
 	if !u.IsAdmin {
-		query += ` LEFT JOIN device_group_members m ON m.group_id=g.id LEFT JOIN devices d ON d.group_id=g.id WHERE m.user_id=? OR d.owner_user_id=?`
+		query += ` LEFT JOIN device_group_members m ON m.group_id=g.id LEFT JOIN device_group_devices link ON link.group_id=g.id LEFT JOIN devices d ON d.id=link.device_id WHERE m.user_id=? OR d.owner_user_id=?`
 		args = append(args, u.ID, u.ID)
 	}
 	query += ` ORDER BY g.name COLLATE NOCASE`
@@ -207,7 +337,7 @@ func (s *store) accessibleUsers(u user) ([]user, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT u2.id,u2.username,u2.display_name,u2.is_admin,u2.status
 FROM users u2
 WHERE u2.status=1 AND (u2.id=? OR EXISTS(
-  SELECT 1 FROM devices d JOIN device_group_members m ON m.group_id=d.group_id
+  SELECT 1 FROM devices d JOIN device_group_devices link ON link.device_id=d.id JOIN device_group_members m ON m.group_id=link.group_id
   WHERE d.owner_user_id=u2.id AND d.status=1 AND m.user_id=?
 )) ORDER BY u2.username COLLATE NOCASE`, u.ID, u.ID)
 	if err != nil {
@@ -228,12 +358,15 @@ WHERE u2.status=1 AND (u2.id=? OR EXISTS(
 }
 
 func (s *store) accessiblePeers(u user) ([]peerPayload, error) {
-	base := `SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note
+	base := `SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,d.updated_at,
+COALESCE((SELECT json_group_array(name) FROM (
+ SELECT g2.name AS name FROM device_group_devices link2 JOIN device_groups g2 ON g2.id=link2.group_id
+ WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]')
 FROM devices d JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON g.id=d.group_id`
 	if u.IsAdmin {
 		return s.queryPeers(base + ` WHERE d.status=1 ORDER BY u.username COLLATE NOCASE,d.peer_id`)
 	}
-	return s.queryPeers(base+` WHERE d.status=1 AND (d.owner_user_id=? OR EXISTS(SELECT 1 FROM device_group_members m WHERE m.group_id=d.group_id AND m.user_id=?)) ORDER BY u.username COLLATE NOCASE,d.peer_id`, u.ID, u.ID)
+	return s.queryPeers(base+` WHERE d.status=1 AND (d.owner_user_id=? OR EXISTS(SELECT 1 FROM device_group_devices link JOIN device_group_members m ON m.group_id=link.group_id WHERE link.device_id=d.id AND m.user_id=?)) ORDER BY u.username COLLATE NOCASE,d.peer_id`, u.ID, u.ID)
 }
 
 func (s *store) queryPeers(query string, args ...any) ([]peerPayload, error) {
@@ -246,12 +379,14 @@ func (s *store) queryPeers(query string, args ...any) ([]peerPayload, error) {
 	for rows.Next() {
 		var p peerPayload
 		var raw string
-		if err := rows.Scan(&p.ID, &raw, &p.Status, &p.UserName, &p.DeviceGroupName, &p.Note); err != nil {
+		var groupNamesJSON string
+		if err := rows.Scan(&p.ID, &raw, &p.Status, &p.UserName, &p.DeviceGroupName, &p.Note, &p.LastAccountLogin, &groupNamesJSON); err != nil {
 			return nil, err
 		}
 		p.User = p.UserName
 		p.Info = map[string]any{}
 		_ = json.Unmarshal([]byte(raw), &p.Info)
+		_ = json.Unmarshal([]byte(groupNamesJSON), &p.DeviceGroupNames)
 		out = append(out, p)
 	}
 	return out, rows.Err()

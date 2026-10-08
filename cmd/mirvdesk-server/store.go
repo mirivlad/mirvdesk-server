@@ -107,6 +107,21 @@ CREATE TABLE IF NOT EXISTS device_group_members (
   PRIMARY KEY(group_id,user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_device_group_members_user_id ON device_group_members(user_id);
+CREATE TABLE IF NOT EXISTS device_group_devices (
+  group_id INTEGER NOT NULL REFERENCES device_groups(id) ON DELETE CASCADE,
+  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  PRIMARY KEY(group_id,device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_device_group_devices_device_id ON device_group_devices(device_id);
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -116,6 +131,11 @@ CREATE INDEX IF NOT EXISTS idx_device_group_members_user_id ON device_group_memb
 	_, err := s.db.Exec(`INSERT OR IGNORE INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
 SELECT device_id,user_id,device_uuid,'{}',1,created_at FROM sessions
 WHERE device_id<>'' AND id IN (SELECT MAX(id) FROM sessions WHERE device_id<>'' GROUP BY device_id)`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT OR IGNORE INTO device_group_devices(group_id,device_id)
+SELECT group_id,id FROM devices WHERE group_id IS NOT NULL`)
 	return err
 }
 func (s *store) userCount() (int, error) {
