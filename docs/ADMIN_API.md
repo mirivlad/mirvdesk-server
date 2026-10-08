@@ -30,3 +30,13 @@ The existing singular group endpoint replaces the full set and keeps the
 primary group value for clients 1.6.x. List responses now include
 device_group_names (array) in addition to legacy device_group_name.
 The upgrade migrates pre-existing single-group assignments idempotently.
+
+### Password guessing mitigation
+
+The login endpoint keeps a bounded in-memory failure counter. Eight bad
+passwords for an account and source address, or eighty bad passwords from
+one source address across usernames, cause HTTP 429 and Retry-After for
+approximately two minutes. Counters are shared within one running API
+instance, and reset when the process restarts. The reverse proxy is treated
+as the source address unless a separately trusted forwarded-IP policy is
+implemented; untrusted X-Forwarded-For headers are ignored.

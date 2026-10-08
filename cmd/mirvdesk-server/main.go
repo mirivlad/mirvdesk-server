@@ -68,9 +68,10 @@ func (c *child) stop() {
 }
 
 type state struct {
-	hbbs  *child
-	hbbr  *child
-	store *store
+	hbbs         *child
+	hbbr         *child
+	store        *store
+	loginLimiter loginAttemptLimiter
 }
 
 func (s *state) handler() http.Handler {
