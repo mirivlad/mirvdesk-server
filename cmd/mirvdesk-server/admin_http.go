@@ -24,6 +24,7 @@ func (s *state) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *state) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/users", s.adminOnly(s.adminListUsers))
+	mux.HandleFunc("GET /api/admin/audit", s.adminOnly(s.adminListAudit))
 	mux.HandleFunc("GET /api/admin/groups", s.adminOnly(s.adminListGroups))
 	mux.HandleFunc("POST /api/admin/groups", s.adminOnly(s.adminCreateGroup))
 	mux.HandleFunc("POST /api/admin/groups/{group}/members", s.adminOnly(s.adminAddGroupMember))
@@ -83,6 +84,7 @@ func (s *state) adminCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusConflict, err.Error())
 		return
 	}
+	s.recordAdminAudit(r, "group.create", "group", name)
 	writeJSON(w, http.StatusCreated, map[string]string{"name": strings.TrimSpace(body.Name)})
 }
 
@@ -98,6 +100,7 @@ func (s *state) adminAddGroupMember(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusNotFound, "user or group not found")
 		return
 	}
+	s.recordAdminAudit(r, "group.member.add", "membership", r.PathValue("group")+":"+body.Username)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -106,6 +109,7 @@ func (s *state) adminRemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusNotFound, "membership not found")
 		return
 	}
+	s.recordAdminAudit(r, "group.member.remove", "membership", r.PathValue("group")+":"+r.PathValue("username"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -121,6 +125,7 @@ func (s *state) adminSetDeviceGroup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusNotFound, "device or group not found")
 		return
 	}
+	s.recordAdminAudit(r, "device.group.replace", "device", r.PathValue("peer"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -150,5 +155,6 @@ func (s *state) adminSetDeviceGroups(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAdminAudit(r, "device.groups.replace", "device", r.PathValue("peer"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

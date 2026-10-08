@@ -113,6 +113,15 @@ CREATE TABLE IF NOT EXISTS device_group_devices (
   PRIMARY KEY(group_id,device_id)
 );
 CREATE INDEX IF NOT EXISTS idx_device_group_devices_device_id ON device_group_devices(device_id);
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return err

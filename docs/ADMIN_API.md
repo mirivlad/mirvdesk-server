@@ -40,3 +40,12 @@ approximately two minutes. Counters are shared within one running API
 instance, and reset when the process restarts. The reverse proxy is treated
 as the source address unless a separately trusted forwarded-IP policy is
 implemented; untrusted X-Forwarded-For headers are ignored.
+
+
+### Administrator audit events
+
+GET /api/admin/audit returns most recent administrator actions (up to 1,000
+retained in query), including actor, action, resource ID and timestamp.
+Credentials, session tokens and passwords are never part of these events.
+Records are stored in the persistent SQLite database; this is a basic
+operational log, not a tamper-proof security audit system.

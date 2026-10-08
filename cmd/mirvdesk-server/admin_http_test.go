@@ -152,3 +152,37 @@ func TestMultipleDeviceGroupsAndLegacyCompatibility(t *testing.T) {
 		t.Fatalf("unexpected group links: %+v: %v", names, err)
 	}
 }
+
+func TestAdminAuditCapturesMutationsWithoutCredentials(t *testing.T) {
+	st, db := newTestState(t)
+	h := st.handler()
+	_, _ = db.createAdmin("operator", "admin-long-password", "Operator")
+	_, _ = db.createUser("employee", "employee-long-password", "Employee", false)
+	admin := loginForGroups(t, h, "operator", "admin-long-password", "811001", "operator")
+	user := loginForGroups(t, h, "employee", "employee-long-password", "811002", "employee")
+	if got := request(t, h, http.MethodPost, "/api/admin/groups",
+		`{"name":"Support"}`, admin); got.Code != http.StatusCreated {
+		t.Fatalf("failed to create group: %s", got.Body.String())
+	}
+	if got := request(t, h, http.MethodPut, "/api/admin/devices/811002/groups",
+		`{"groups":["Support"]}`, admin); got.Code != http.StatusOK {
+		t.Fatalf("failed to assign groups: %s", got.Body.String())
+	}
+	if got := request(t, h, http.MethodGet, "/api/admin/audit", "", user); got.Code != http.StatusForbidden {
+		t.Fatalf("non-admin audit access: %d", got.Code)
+	}
+	if got := request(t, h, http.MethodGet, "/api/admin/audit", "", ""); got.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous audit access: %d", got.Code)
+	}
+	result := request(t, h, http.MethodGet, "/api/admin/audit", "", admin)
+	if result.Code != http.StatusOK ||
+		!strings.Contains(result.Body.String(), "device.groups.replace") ||
+		!strings.Contains(result.Body.String(), "group.create") ||
+		!strings.Contains(result.Body.String(), "operator") {
+		t.Fatalf("audit missing entries: %d %s", result.Code, result.Body.String())
+	}
+	if strings.Contains(result.Body.String(), "admin-long-password") ||
+		strings.Contains(result.Body.String(), "employee-long-password") {
+		t.Fatalf("audit contains password: %s", result.Body.String())
+	}
+}
