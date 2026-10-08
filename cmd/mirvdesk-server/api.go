@@ -61,7 +61,11 @@ func (s *state) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.upsertDevice(u.ID, req.ID, req.UUID, req.DeviceInfo); err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "failed to register device")
+		if errors.Is(err, errDeviceOwned) {
+			writeAPIError(w, http.StatusConflict, "device already registered to another account")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "failed to register device")
+		}
 		return
 	}
 	token, err := s.store.createSession(u.ID, req.ID, req.UUID)

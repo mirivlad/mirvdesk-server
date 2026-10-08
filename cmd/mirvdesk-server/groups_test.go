@@ -104,3 +104,29 @@ func TestGroupsAPIRequiresAuthentication(t *testing.T) {
 		}
 	}
 }
+
+func TestRegisteredDeviceOwnerCannotBeReassigned(t *testing.T) {
+	st, db := newTestState(t)
+	h := st.handler()
+	if _, err := db.createUser("alice", "alice-password-long", "Alice", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.createUser("bob", "bob-password-long", "Bob", false); err != nil {
+		t.Fatal(err)
+	}
+	loginForGroups(t, h, "alice", "alice-password-long", "900000321", "alice-pc")
+	body := `{"username":"bob","password":"bob-password-long","type":"account","id":"900000321","uuid":"forged","deviceInfo":{}}`
+	res := request(t, h, http.MethodPost, "/api/login", body, "")
+	if res.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", res.Code, res.Body.String())
+	}
+	alice, err := db.authenticate("alice", "alice-password-long")
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices, err := db.accessiblePeers(alice)
+	if err != nil || len(devices) != 1 || devices[0].ID != "900000321" {
+		t.Fatalf("original owner lost device: %+v; %v", devices, err)
+	}
+	loginForGroups(t, h, "alice", "alice-password-long", "900000321", "updated-pc")
+}

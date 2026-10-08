@@ -149,3 +149,25 @@ func TestPasswordResetRevokesSessions(t *testing.T) {
 		t.Fatalf("new password rejected: %v", err)
 	}
 }
+
+func TestRevokedUserCannotReuseActiveToken(t *testing.T) {
+	st, db := newTestState(t)
+	u, err := db.createUser("alice", "alice-password-long", "Alice", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := db.createSession(u.ID, "test-device", "test-uuid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.userByToken(token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec("UPDATE users SET status=0 WHERE id=?", u.ID); err != nil {
+		t.Fatal(err)
+	}
+	got := request(t, st.handler(), http.MethodPost, "/api/currentUser", "{}", token)
+	if got.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled account had valid token: %d", got.Code)
+	}
+}

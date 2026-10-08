@@ -296,7 +296,7 @@ func (s *store) userByToken(raw string) (user, error) {
 	h := sha256.Sum256([]byte(raw))
 	err := s.db.QueryRow(`SELECT u.id,u.username,u.display_name,u.is_admin,u.status
 FROM sessions s JOIN users u ON u.id=s.user_id
-WHERE s.token_hash=? AND s.expires_at>?`, h[:], time.Now().Unix()).Scan(
+WHERE s.token_hash=? AND s.expires_at>? AND u.status=1`, h[:], time.Now().Unix()).Scan(
 		&u.ID, &u.Name, &u.DisplayName, &admin, &u.Status)
 	if err != nil {
 		return u, err
