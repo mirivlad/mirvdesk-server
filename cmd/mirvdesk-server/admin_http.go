@@ -37,6 +37,7 @@ func (s *state) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/devices", s.adminOnly(s.adminListDevices))
 	mux.HandleFunc("PUT /api/admin/devices/{peer}/group", s.adminOnly(s.adminSetDeviceGroup))
 	mux.HandleFunc("GET /api/admin/devices/{peer}/groups", s.adminOnly(s.adminGetDeviceGroups))
+	mux.HandleFunc("PUT /api/admin/devices/{peer}/note", s.adminOnly(s.adminSetDeviceNote))
 	mux.HandleFunc("PUT /api/admin/devices/{peer}/groups", s.adminOnly(s.adminSetDeviceGroups))
 }
 
@@ -201,5 +202,26 @@ func (s *state) adminDeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAdminAudit(r, "group.delete", "group", name)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *state) adminSetDeviceNote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Note string `json:"note"`
+	}
+	if err := decodeJSON(r, &body); err != nil || len(body.Note) > 1000 {
+		writeAPIError(w, http.StatusBadRequest, "note must be 1000 characters or less")
+		return
+	}
+	id := r.PathValue("peer")
+	if err := s.store.setDeviceNote(id, body.Note); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeAPIError(w, http.StatusNotFound, "device not found")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "could not save device note")
+		}
+		return
+	}
+	s.recordAdminAudit(r, "device.note.update", "device", id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

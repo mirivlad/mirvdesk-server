@@ -24,6 +24,7 @@ type peerPayload struct {
 	DeviceGroupName  string         `json:"device_group_name"`
 	DeviceGroupNames []string       `json:"device_group_names,omitempty"`
 	Note             string         `json:"note"`
+	LastAccountLogin int64          `json:"last_account_login"`
 }
 
 func parsePage(r *http.Request) (current, pageSize int) {
@@ -231,6 +232,24 @@ func (s *store) setDeviceGroups(peerID string, groupNames []string) error {
 	return tx.Commit()
 }
 
+func (s *store) setDeviceNote(peerID, note string) error {
+	if len(note) > 1000 {
+		return errors.New("note must be 1000 characters or less")
+	}
+	result, err := s.db.Exec("UPDATE devices SET note=? WHERE peer_id=?", strings.TrimSpace(note), strings.TrimSpace(peerID))
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("device not found")
+	}
+	return nil
+}
+
 func (s *store) deviceGroupNames(peerID string) ([]string, error) {
 	rows, err := s.db.Query(`SELECT g.name FROM device_group_devices link
 JOIN devices d ON d.id=link.device_id
@@ -269,7 +288,7 @@ func (s *store) listDeviceGroups() ([]deviceGroup, error) {
 }
 
 func (s *store) listDevices() ([]peerPayload, error) {
-	return s.queryPeers(`SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,
+	return s.queryPeers(`SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,d.updated_at,
 COALESCE((SELECT json_group_array(name) FROM (
  SELECT g2.name AS name FROM device_group_devices link2 JOIN device_groups g2 ON g2.id=link2.group_id
  WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]')
@@ -339,7 +358,7 @@ WHERE u2.status=1 AND (u2.id=? OR EXISTS(
 }
 
 func (s *store) accessiblePeers(u user) ([]peerPayload, error) {
-	base := `SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,
+	base := `SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,d.updated_at,
 COALESCE((SELECT json_group_array(name) FROM (
  SELECT g2.name AS name FROM device_group_devices link2 JOIN device_groups g2 ON g2.id=link2.group_id
  WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]')
@@ -361,7 +380,7 @@ func (s *store) queryPeers(query string, args ...any) ([]peerPayload, error) {
 		var p peerPayload
 		var raw string
 		var groupNamesJSON string
-		if err := rows.Scan(&p.ID, &raw, &p.Status, &p.UserName, &p.DeviceGroupName, &p.Note, &groupNamesJSON); err != nil {
+		if err := rows.Scan(&p.ID, &raw, &p.Status, &p.UserName, &p.DeviceGroupName, &p.Note, &p.LastAccountLogin, &groupNamesJSON); err != nil {
 			return nil, err
 		}
 		p.User = p.UserName

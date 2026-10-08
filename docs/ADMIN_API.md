@@ -63,3 +63,11 @@ An administrator cannot disable their own account or the last active administrat
 
 - PUT /api/admin/groups/{group} with JSON {"name":"New name"} renames a group while retaining its member/device links (HTTP 409 on duplicate name).
 - DELETE /api/admin/groups/{group} deletes the group and cascading membership/device links; other device groups remain intact. The legacy primary group FK is cleared by SQLite.
+
+### Device metadata
+
+PUT /api/admin/devices/{peer}/note with JSON {"note":"Reception workstation"}
+stores a manager note (up to 1000 characters). Device lists include the
+last_account_login Unix timestamp: this is the last successful account
+registration from that client, **not live device presence**, and should never
+be represented by a green online badge without a real hbbs/presence check.
