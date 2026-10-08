@@ -30,6 +30,8 @@ func (s *state) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/audit", s.adminOnly(s.adminListAudit))
 	mux.HandleFunc("GET /api/admin/groups", s.adminOnly(s.adminListGroups))
 	mux.HandleFunc("POST /api/admin/groups", s.adminOnly(s.adminCreateGroup))
+	mux.HandleFunc("PUT /api/admin/groups/{group}", s.adminOnly(s.adminRenameGroup))
+	mux.HandleFunc("DELETE /api/admin/groups/{group}", s.adminOnly(s.adminDeleteGroup))
 	mux.HandleFunc("POST /api/admin/groups/{group}/members", s.adminOnly(s.adminAddGroupMember))
 	mux.HandleFunc("DELETE /api/admin/groups/{group}/members/{username}", s.adminOnly(s.adminRemoveGroupMember))
 	mux.HandleFunc("GET /api/admin/devices", s.adminOnly(s.adminListDevices))
@@ -159,5 +161,45 @@ func (s *state) adminSetDeviceGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAdminAudit(r, "device.groups.replace", "device", r.PathValue("peer"))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *state) adminRenameGroup(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid group rename request")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if len(name) < 1 || len(name) > 80 {
+		writeAPIError(w, http.StatusBadRequest, "group name must be 1-80 characters")
+		return
+	}
+	oldName := r.PathValue("group")
+	if err := s.store.renameDeviceGroup(oldName, name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeAPIError(w, http.StatusNotFound, "group not found")
+		} else {
+			writeAPIError(w, http.StatusConflict, "group name already exists")
+		}
+		return
+	}
+	s.recordAdminAudit(r, "group.rename", "group", oldName+" -> "+name)
+	writeJSON(w, http.StatusOK, map[string]string{"name": name})
+}
+
+func (s *state) adminDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("group")
+	if err := s.store.deleteDeviceGroup(name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeAPIError(w, http.StatusNotFound, "group not found")
+		} else {
+			writeAPIError(w, http.StatusInternalServerError, "failed to delete group")
+		}
+		return
+	}
+	s.recordAdminAudit(r, "group.delete", "group", name)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

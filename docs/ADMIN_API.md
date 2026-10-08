@@ -58,3 +58,8 @@ operational log, not a tamper-proof security audit system.
 - PUT /api/admin/users/{username}/password with JSON {"password":"new-strong-password"} resets credentials, invalidating every current session for that user.
 
 An administrator cannot disable their own account or the last active administrator. All mutations require server-validated administrator sessions and are logged with no password contents.
+
+### Group rename and removal
+
+- PUT /api/admin/groups/{group} with JSON {"name":"New name"} renames a group while retaining its member/device links (HTTP 409 on duplicate name).
+- DELETE /api/admin/groups/{group} deletes the group and cascading membership/device links; other device groups remain intact. The legacy primary group FK is cleared by SQLite.

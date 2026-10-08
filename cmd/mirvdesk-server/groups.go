@@ -94,6 +94,55 @@ func (s *store) createDeviceGroup(name string) error {
 	return err
 }
 
+// Group IDs stay stable on rename, preserving device links and memberships.
+func (s *store) renameDeviceGroup(oldName, newName string) error {
+	oldName, newName = strings.TrimSpace(oldName), strings.TrimSpace(newName)
+	if len(newName) < 1 || len(newName) > 80 {
+		return errors.New("group name must be 1-80 characters")
+	}
+	result, err := s.db.Exec("UPDATE device_groups SET name=? WHERE name=?", newName, oldName)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("group not found")
+	}
+	return nil
+}
+
+func (s *store) deleteDeviceGroup(groupName string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("DELETE FROM device_groups WHERE name=?", strings.TrimSpace(groupName))
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("group not found")
+	}
+	// ON DELETE SET NULL clears the removed primary group; choose a remaining
+	// linked group so 1.6.x clients continue seeing a useful primary group.
+	_, err = tx.Exec(`UPDATE devices
+SET group_id=(SELECT MIN(link.group_id) FROM device_group_devices link WHERE link.device_id=devices.id)
+WHERE group_id IS NULL AND EXISTS(
+  SELECT 1 FROM device_group_devices link WHERE link.device_id=devices.id)`)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *store) addUserToDeviceGroup(groupName, username string) error {
 	res, err := s.db.Exec(`INSERT OR IGNORE INTO device_group_members(group_id,user_id)
 SELECT g.id,u.id FROM device_groups g, users u WHERE g.name=? AND u.username=?`, strings.TrimSpace(groupName), strings.TrimSpace(username))
