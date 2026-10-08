@@ -108,6 +108,7 @@ func (s *state) handler() http.Handler {
 	mux.HandleFunc("GET /api/device-group/accessible", s.handleAccessibleDeviceGroups)
 	mux.HandleFunc("GET /api/users", s.handleAccessibleUsers)
 	mux.HandleFunc("GET /api/peers", s.handleAccessiblePeers)
+	s.registerAdminRoutes(mux)
 	return mux
 }
 
