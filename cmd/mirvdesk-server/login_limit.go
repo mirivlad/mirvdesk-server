@@ -24,8 +24,9 @@ type loginAttempt struct {
 }
 
 // A bounded in-memory limiter protects the password API without trusting
-// spoofable X-Forwarded-For headers. The reverse proxy may be 127.0.0.1, so
-// per-username limits remain effective even behind a local proxy.
+// spoofable X-Forwarded-For headers. When traffic comes from a local nginx
+// reverse proxy, an IP-wide limit would block every user after one attacker
+// exhausts it; only per-account throttling is applied on that shared hop.
 type loginAttemptLimiter struct {
 	mu      sync.Mutex
 	records map[string]loginAttempt
@@ -51,6 +52,9 @@ func loginAttemptKeys(r *http.Request, username string) (account, source string)
 	if ip == "" {
 		ip = "unknown"
 	}
+	if parsed := net.ParseIP(ip); parsed != nil && parsed.IsLoopback() {
+		return "account:" + username + ":local-proxy", ""
+	}
 	return "account:" + username + ":" + ip, "ip:" + ip
 }
 
@@ -60,6 +64,9 @@ func (l *loginAttemptLimiter) check(account, source string) time.Duration {
 	now := l.nowTime()
 	var wait time.Duration
 	for _, key := range []string{account, source} {
+		if key == "" {
+			continue
+		}
 		record := l.records[key]
 		if waitFor := record.blockedUntil.Sub(now); waitFor > wait {
 			wait = waitFor
@@ -89,6 +96,9 @@ func (l *loginAttemptLimiter) failure(account, source string) {
 	}{
 		{account, loginUserFailureLimit}, {source, loginIPFailureLimit},
 	} {
+		if bucket.key == "" {
+			continue
+		}
 		entry, exists := l.records[bucket.key]
 		if !exists && len(l.records) >= loginAttemptMapLimit {
 			continue

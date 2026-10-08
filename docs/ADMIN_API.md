@@ -35,11 +35,12 @@ The upgrade migrates pre-existing single-group assignments idempotently.
 
 The login endpoint keeps a bounded in-memory failure counter. Eight bad
 passwords for an account and source address, or eighty bad passwords from
-one source address across usernames, cause HTTP 429 and Retry-After for
+one direct source address across usernames, cause HTTP 429 and Retry-After for
 approximately two minutes. Counters are shared within one running API
-instance, and reset when the process restarts. The reverse proxy is treated
-as the source address unless a separately trusted forwarded-IP policy is
-implemented; untrusted X-Forwarded-For headers are ignored.
+instance, and reset when the process restarts. The local nginx reverse proxy is a shared 127.0.0.1 hop: the IP-wide limit
+is intentionally disabled for loopback sources to avoid locking out every
+user at once; username+proxy limits remain. Forwarded-IP headers are never
+trusted without an explicit trusted-proxy configuration.
 
 
 ### Administrator audit events

@@ -47,3 +47,20 @@ func TestLoginLimiterPerSourcePreventsUsernameSpray(t *testing.T) {
 		t.Fatal("IP-wide limiter did not block username spraying")
 	}
 }
+
+func TestLocalReverseProxyDoesNotBlockAllAccounts(t *testing.T) {
+	l := &loginAttemptLimiter{}
+	req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	for i := 0; i < loginIPFailureLimit; i++ {
+		key, source := loginAttemptKeys(req, string(rune('a'+i)))
+		if source != "" {
+			t.Fatalf("local proxy inherited global IP bucket %s", source)
+		}
+		l.failure(key, source)
+	}
+	key, source := loginAttemptKeys(req, "legitimate-user")
+	if l.check(key, source) > 0 {
+		t.Fatal("local reverse proxy enabled a shared global lockout")
+	}
+}
