@@ -123,6 +123,11 @@ func (s *state) adminResetUserPassword(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "password must be at least 10 characters")
 		return
 	}
+	actor, _, err := s.authenticatedUser(r)
+	if err != nil {
+		writeAPIError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	name := strings.TrimSpace(r.PathValue("username"))
 	if err := s.store.setPassword(name, body.Password); err != nil {
 		switch {
@@ -133,6 +138,6 @@ func (s *state) adminResetUserPassword(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.recordAdminAudit(r, "user.password_reset", "user", name)
+	s.recordAdminAuditActor(actor.ID, "user.password_reset", "user", name)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

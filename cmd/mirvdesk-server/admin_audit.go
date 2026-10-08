@@ -41,14 +41,18 @@ ORDER BY a.id DESC LIMIT 1000`)
 	return items, rows.Err()
 }
 
+func (s *state) recordAdminAuditActor(actorID int64, action, targetType, targetID string) {
+	if err := s.store.writeAdminAudit(actorID, action, targetType, targetID); err != nil {
+		log.Printf("admin audit write failed: %v", err)
+	}
+}
+
 func (s *state) recordAdminAudit(r *http.Request, action, targetType, targetID string) {
 	user, _, err := s.authenticatedUser(r)
 	if err != nil || !user.IsAdmin {
 		return
 	}
-	if err := s.store.writeAdminAudit(user.ID, action, targetType, targetID); err != nil {
-		log.Printf("admin audit write failed: %v", err)
-	}
+	s.recordAdminAuditActor(user.ID, action, targetType, targetID)
 }
 
 func (s *state) adminListAudit(w http.ResponseWriter, r *http.Request) {
