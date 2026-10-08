@@ -130,3 +130,54 @@ func TestRegisteredDeviceOwnerCannotBeReassigned(t *testing.T) {
 	}
 	loginForGroups(t, h, "alice", "alice-password-long", "900000321", "updated-pc")
 }
+
+// Restart migration must not re-add a group removed using the new API.
+func TestMultiGroupMigrationDoesNotRecreateDeletedLinks(t *testing.T) {
+	dir := t.TempDir()
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := db.createUser("owner", "owner-long-password", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.upsertDevice(owner.ID, "991001", "uuid-test", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []string{"Legacy", "New"} {
+		if err := db.createDeviceGroup(group); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Simulate an old database with devices.group_id and no join-table link.
+	if _, err := db.db.Exec(`UPDATE devices SET group_id=(SELECT id FROM device_groups WHERE name='Legacy') WHERE peer_id='991001'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := db.deviceGroupNames("991001")
+	if err != nil || len(names) != 1 || names[0] != "Legacy" {
+		t.Fatalf("legacy link not backfilled: %v %v", names, err)
+	}
+	if err := db.setDeviceGroups("991001", []string{"New"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.close()
+	names, err = db.deviceGroupNames("991001")
+	if err != nil || len(names) != 1 || names[0] != "New" {
+		t.Fatalf("removed legacy group was restored: %v %v", names, err)
+	}
+}

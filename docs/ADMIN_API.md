@@ -19,3 +19,14 @@ that sharing/group membership is an hbbs authorization policy.
 
 This API is a prerequisite for administrator screens in the desktop client.
 It is not included in the 1.6.1 release.
+
+
+### Multiple device groups (compatible with 1.6.x)
+
+- GET /api/admin/devices/{peer}/groups returns {"groups":["Operations","Support"]}.
+- PUT /api/admin/devices/{peer}/groups with JSON {"groups":["Operations","Support"]} atomically replaces all assignments. Empty array removes all assignments.
+
+The existing singular group endpoint replaces the full set and keeps the
+primary group value for clients 1.6.x. List responses now include
+device_group_names (array) in addition to legacy device_group_name.
+The upgrade migrates pre-existing single-group assignments idempotently.

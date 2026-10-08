@@ -30,6 +30,8 @@ func (s *state) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/groups/{group}/members/{username}", s.adminOnly(s.adminRemoveGroupMember))
 	mux.HandleFunc("GET /api/admin/devices", s.adminOnly(s.adminListDevices))
 	mux.HandleFunc("PUT /api/admin/devices/{peer}/group", s.adminOnly(s.adminSetDeviceGroup))
+	mux.HandleFunc("GET /api/admin/devices/{peer}/groups", s.adminOnly(s.adminGetDeviceGroups))
+	mux.HandleFunc("PUT /api/admin/devices/{peer}/groups", s.adminOnly(s.adminSetDeviceGroups))
 }
 
 func adminPaginate[T any](w http.ResponseWriter, r *http.Request, items []T) {
@@ -117,6 +119,35 @@ func (s *state) adminSetDeviceGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.setDeviceGroup(r.PathValue("peer"), body.Group); err != nil {
 		writeAPIError(w, http.StatusNotFound, "device or group not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// Multi-group API. The singular group endpoint remains for 1.6.x clients.
+func (s *state) adminGetDeviceGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.store.deviceGroupNames(r.PathValue("peer"))
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to list device groups")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+}
+
+func (s *state) adminSetDeviceGroups(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Groups []string `json:"groups"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid device group assignment")
+		return
+	}
+	if body.Groups == nil || len(body.Groups) > 20 {
+		writeAPIError(w, http.StatusBadRequest, "groups must contain up to 20 group names")
+		return
+	}
+	if err := s.store.setDeviceGroups(r.PathValue("peer"), body.Groups); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

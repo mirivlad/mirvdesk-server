@@ -80,3 +80,75 @@ func TestAdminAPIRejectsInvalidAssignments(t *testing.T) {
 		t.Fatalf("expected missing group 404, got %d", got.Code)
 	}
 }
+
+func TestMultipleDeviceGroupsAndLegacyCompatibility(t *testing.T) {
+	st, db := newTestState(t)
+	h := st.handler()
+	_, _ = db.createAdmin("admin", "admin-long-password", "Admin")
+	_, _ = db.createUser("owner", "owner-long-password", "Owner", false)
+	_, _ = db.createUser("operator", "operator-long-password", "Operator", false)
+	_, _ = db.createUser("support", "support-long-password", "Support", false)
+	admin := loginForGroups(t, h, "admin", "admin-long-password", "790001", "admin")
+	_ = loginForGroups(t, h, "owner", "owner-long-password", "790002", "owner")
+	operator := loginForGroups(t, h, "operator", "operator-long-password", "790003", "operator")
+	support := loginForGroups(t, h, "support", "support-long-password", "790004", "support")
+	for _, name := range []string{"Operations", "Support"} {
+		got := request(t, h, http.MethodPost, "/api/admin/groups",
+			strings.ReplaceAll(`{"name":"@NAME@"}`, "@NAME@", name), admin)
+		if got.Code != http.StatusCreated {
+			t.Fatalf("create group %s: %s", name, got.Body.String())
+		}
+	}
+	// This test uses group names from the preceding loop, not its placeholder.
+	set := request(t, h, http.MethodPut, "/api/admin/devices/790002/groups",
+		`{"groups":["Operations","Support"]}`, admin)
+	if set.Code != http.StatusOK {
+		t.Fatalf("multi assign: %d %s", set.Code, set.Body.String())
+	}
+	for _, item := range []struct{ group, user string }{{"Operations", "operator"}, {"Support", "support"}} {
+		body := `{"username":"@USER@"}`
+		got := request(t, h, http.MethodPost, "/api/admin/groups/"+item.group+"/members",
+			strings.ReplaceAll(body, "@USER@", item.user), admin)
+		if got.Code != http.StatusOK {
+			t.Fatalf("add member: %s", got.Body.String())
+		}
+	}
+	for _, token := range []string{operator, support} {
+		visible := request(t, h, http.MethodGet, "/api/peers", "", token)
+		if visible.Code != http.StatusOK || !strings.Contains(visible.Body.String(), "790002") {
+			t.Fatalf("device should be visible through either group: %s", visible.Body.String())
+		}
+		if !strings.Contains(visible.Body.String(), "device_group_names") {
+			t.Fatalf("new group-name array missing: %s", visible.Body.String())
+		}
+	}
+	groups := request(t, h, http.MethodGet, "/api/admin/devices/790002/groups", "", admin)
+	if groups.Code != http.StatusOK || !strings.Contains(groups.Body.String(), "Operations") || !strings.Contains(groups.Body.String(), "Support") {
+		t.Fatalf("groups API: %d %s", groups.Code, groups.Body.String())
+	}
+	// All-or-nothing if one requested group doesn't exist.
+	invalid := request(t, h, http.MethodPut, "/api/admin/devices/790002/groups",
+		`{"groups":["Operations","MISSING"]}`, admin)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("expected error: %s", invalid.Body.String())
+	}
+	names, err := db.deviceGroupNames("790002")
+	if err != nil || len(names) != 2 {
+		t.Fatalf("partial mutation: %+v: %v", names, err)
+	}
+
+	// Singular legacy endpoint replaces the complete set.
+	legacy := request(t, h, http.MethodPut, "/api/admin/devices/790002/group",
+		`{"group":"Operations"}`, admin)
+	if legacy.Code != http.StatusOK {
+		t.Fatalf("legacy update failed: %d", legacy.Code)
+	}
+	hidden := request(t, h, http.MethodGet, "/api/peers", "", support)
+	if strings.Contains(hidden.Body.String(), "790002") {
+		t.Fatalf("legacy replacement kept stale group visibility: %s", hidden.Body.String())
+	}
+	names, err = db.deviceGroupNames("790002")
+	if err != nil || len(names) != 1 || names[0] != "Operations" {
+		t.Fatalf("unexpected group links: %+v: %v", names, err)
+	}
+}
