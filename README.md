@@ -94,3 +94,14 @@ MirvDesk-specific management endpoints should be namespaced so they do not unnec
 
 RustDesk Server OSS is developed at https://github.com/rustdesk/rustdesk-server and is distributed under AGPL-3.0.
 MirvDesk Server is independent from and is not endorsed by RustDesk/Purslane.
+
+
+### Device ownership safeguards (1.6.1)
+
+Existing device IDs cannot be re-registered by another account (HTTP 409).
+Sessions of disabled users are rejected.
+
+Initial enrollment still relies on the self-reported peer ID; verifying
+device ownership cryptographically and enforcing device-group permissions
+during connection establishment remain future security work. Group
+visibility is **not** an access-control boundary for the RustDesk transport.

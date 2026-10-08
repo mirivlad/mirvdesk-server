@@ -53,6 +53,8 @@ func paginate[T any](items []T, current, pageSize int) []T {
 	return items[start:end]
 }
 
+var errDeviceOwned = errors.New("device is already registered to another account")
+
 func (s *store) upsertDevice(ownerID int64, peerID, uuid string, info map[string]any) error {
 	peerID = strings.TrimSpace(peerID)
 	if peerID == "" {
@@ -65,11 +67,22 @@ func (s *store) upsertDevice(ownerID int64, peerID, uuid string, info map[string
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
+	result, err := s.db.Exec(`INSERT INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
 VALUES(?,?,?,?,1,?)
-ON CONFLICT(peer_id) DO UPDATE SET owner_user_id=excluded.owner_user_id, uuid=excluded.uuid,
-info=excluded.info, status=1, updated_at=excluded.updated_at`, peerID, ownerID, uuid, string(raw), time.Now().Unix())
-	return err
+ON CONFLICT(peer_id) DO UPDATE SET uuid=excluded.uuid, info=excluded.info,
+status=1, updated_at=excluded.updated_at
+WHERE devices.owner_user_id=excluded.owner_user_id`, peerID, ownerID, uuid, string(raw), time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errDeviceOwned
+	}
+	return nil
 }
 
 func (s *store) createDeviceGroup(name string) error {
