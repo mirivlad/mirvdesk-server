@@ -101,6 +101,12 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 CREATE INDEX IF NOT EXISTS idx_devices_owner_user_id ON devices(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_devices_group_id ON devices(group_id);
+CREATE TABLE IF NOT EXISTS user_devices (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  PRIMARY KEY(user_id,device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_devices_device ON user_devices(device_id);
 CREATE TABLE IF NOT EXISTS device_group_members (
   group_id INTEGER NOT NULL REFERENCES device_groups(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -131,6 +137,17 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at)
 	_, err := s.db.Exec(`INSERT OR IGNORE INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
 SELECT device_id,user_id,device_uuid,'{}',1,created_at FROM sessions
 WHERE device_id<>'' AND id IN (SELECT MAX(id) FROM sessions WHERE device_id<>'' GROUP BY device_id)`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT OR IGNORE INTO user_devices(user_id,device_id)
+SELECT owner_user_id,id FROM devices`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT OR IGNORE INTO user_devices(user_id,device_id)
+SELECT s.user_id,d.id FROM sessions s JOIN devices d ON d.peer_id=s.device_id
+WHERE s.device_id<>''`)
 	if err != nil {
 		return err
 	}

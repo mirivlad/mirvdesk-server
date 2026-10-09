@@ -54,8 +54,6 @@ func paginate[T any](items []T, current, pageSize int) []T {
 	return items[start:end]
 }
 
-var errDeviceOwned = errors.New("device is already registered to another account")
-
 func (s *store) upsertDevice(ownerID int64, peerID, uuid string, info map[string]any) error {
 	peerID = strings.TrimSpace(peerID)
 	if peerID == "" {
@@ -68,22 +66,29 @@ func (s *store) upsertDevice(ownerID int64, peerID, uuid string, info map[string
 	if err != nil {
 		return err
 	}
-	result, err := s.db.Exec(`INSERT INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
+	// An ID identifies a machine/service, not a MirvDesk account. Multiple OS
+	// users can sign in on the same host without changing its rendezvous ID.
+	// Keep the first registrant as the legacy display owner; memberships are
+	// represented by user_devices and are independent of that display field.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`INSERT INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
 VALUES(?,?,?,?,1,?)
-ON CONFLICT(peer_id) DO UPDATE SET uuid=excluded.uuid, info=excluded.info,
-status=1, updated_at=excluded.updated_at
-WHERE devices.owner_user_id=excluded.owner_user_id`, peerID, ownerID, uuid, string(raw), time.Now().Unix())
+ON CONFLICT(peer_id) DO UPDATE SET updated_at=excluded.updated_at,
+status=1, uuid=CASE WHEN devices.owner_user_id=excluded.owner_user_id THEN excluded.uuid ELSE devices.uuid END,
+info=CASE WHEN devices.owner_user_id=excluded.owner_user_id THEN excluded.info ELSE devices.info END`, peerID, ownerID, uuid, string(raw), time.Now().Unix())
 	if err != nil {
 		return err
 	}
-	count, err := result.RowsAffected()
+	_, err = tx.Exec(`INSERT OR IGNORE INTO user_devices(user_id,device_id)
+SELECT ?,id FROM devices WHERE peer_id=?`, ownerID, peerID)
 	if err != nil {
 		return err
 	}
-	if count == 0 {
-		return errDeviceOwned
-	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *store) createDeviceGroup(name string) error {
@@ -300,7 +305,7 @@ func (s *store) accessibleGroups(u user) ([]deviceGroup, error) {
 	query := `SELECT DISTINCT g.id,g.name,g.note FROM device_groups g`
 	args := []any{}
 	if !u.IsAdmin {
-		query += ` LEFT JOIN device_group_members m ON m.group_id=g.id LEFT JOIN device_group_devices link ON link.group_id=g.id LEFT JOIN devices d ON d.id=link.device_id WHERE m.user_id=? OR d.owner_user_id=?`
+		query += ` LEFT JOIN device_group_members m ON m.group_id=g.id LEFT JOIN device_group_devices link ON link.group_id=g.id LEFT JOIN user_devices ud ON ud.device_id=link.device_id WHERE m.user_id=? OR ud.user_id=?`
 		args = append(args, u.ID, u.ID)
 	}
 	query += ` ORDER BY g.name COLLATE NOCASE`
@@ -337,8 +342,8 @@ func (s *store) accessibleUsers(u user) ([]user, error) {
 	rows, err := s.db.Query(`SELECT DISTINCT u2.id,u2.username,u2.display_name,u2.is_admin,u2.status
 FROM users u2
 WHERE u2.status=1 AND (u2.id=? OR EXISTS(
-  SELECT 1 FROM devices d JOIN device_group_devices link ON link.device_id=d.id JOIN device_group_members m ON m.group_id=link.group_id
-  WHERE d.owner_user_id=u2.id AND d.status=1 AND m.user_id=?
+  SELECT 1 FROM devices d JOIN user_devices ud ON ud.device_id=d.id JOIN device_group_devices link ON link.device_id=d.id JOIN device_group_members m ON m.group_id=link.group_id
+  WHERE ud.user_id=u2.id AND d.status=1 AND m.user_id=?
 )) ORDER BY u2.username COLLATE NOCASE`, u.ID, u.ID)
 	if err != nil {
 		return nil, err
@@ -366,7 +371,7 @@ FROM devices d JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON
 	if u.IsAdmin {
 		return s.queryPeers(base + ` WHERE d.status=1 ORDER BY u.username COLLATE NOCASE,d.peer_id`)
 	}
-	return s.queryPeers(base+` WHERE d.status=1 AND (d.owner_user_id=? OR EXISTS(SELECT 1 FROM device_group_devices link JOIN device_group_members m ON m.group_id=link.group_id WHERE link.device_id=d.id AND m.user_id=?)) ORDER BY u.username COLLATE NOCASE,d.peer_id`, u.ID, u.ID)
+	return s.queryPeers(base+` WHERE d.status=1 AND (EXISTS(SELECT 1 FROM user_devices ud WHERE ud.device_id=d.id AND ud.user_id=?) OR EXISTS(SELECT 1 FROM device_group_devices link JOIN device_group_members m ON m.group_id=link.group_id WHERE link.device_id=d.id AND m.user_id=?)) ORDER BY u.username COLLATE NOCASE,d.peer_id`, u.ID, u.ID)
 }
 
 func (s *store) queryPeers(query string, args ...any) ([]peerPayload, error) {

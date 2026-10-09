@@ -105,7 +105,7 @@ func TestGroupsAPIRequiresAuthentication(t *testing.T) {
 	}
 }
 
-func TestRegisteredDeviceOwnerCannotBeReassigned(t *testing.T) {
+func TestSameDeviceCanBeUsedByMultipleAccounts(t *testing.T) {
 	st, db := newTestState(t)
 	h := st.handler()
 	if _, err := db.createUser("alice", "alice-password-long", "Alice", false); err != nil {
@@ -115,20 +115,26 @@ func TestRegisteredDeviceOwnerCannotBeReassigned(t *testing.T) {
 		t.Fatal(err)
 	}
 	loginForGroups(t, h, "alice", "alice-password-long", "900000321", "alice-pc")
-	body := `{"username":"bob","password":"bob-password-long","type":"account","id":"900000321","uuid":"forged","deviceInfo":{}}`
-	res := request(t, h, http.MethodPost, "/api/login", body, "")
-	if res.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d: %s", res.Code, res.Body.String())
-	}
-	alice, err := db.authenticate("alice", "alice-password-long")
-	if err != nil {
-		t.Fatal(err)
-	}
-	devices, err := db.accessiblePeers(alice)
-	if err != nil || len(devices) != 1 || devices[0].ID != "900000321" {
-		t.Fatalf("original owner lost device: %+v; %v", devices, err)
+	loginForGroups(t, h, "bob", "bob-password-long", "900000321", "bob-pc")
+	for _, name := range []string{"alice", "bob"} {
+		u, err := db.authenticate(name, name+"-password-long")
+		if err != nil {
+			t.Fatal(err)
+		}
+		devices, err := db.accessiblePeers(u)
+		if err != nil || len(devices) != 1 || devices[0].ID != "900000321" {
+			t.Fatalf("%s device not accessible: %+v; %v", name, devices, err)
+		}
+		if devices[0].Info["device_name"] != "alice-pc" {
+			t.Fatalf("second sign-in overwrote original metadata: %+v", devices[0].Info)
+		}
 	}
 	loginForGroups(t, h, "alice", "alice-password-long", "900000321", "updated-pc")
+	alice, _ := db.authenticate("alice", "alice-password-long")
+	devices, _ := db.accessiblePeers(alice)
+	if devices[0].Info["device_name"] != "updated-pc" {
+		t.Fatalf("original record could not be updated: %+v", devices[0].Info)
+	}
 }
 
 // Restart migration must not re-add a group removed using the new API.
