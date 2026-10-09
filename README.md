@@ -96,12 +96,16 @@ RustDesk Server OSS is developed at https://github.com/rustdesk/rustdesk-server 
 MirvDesk Server is independent from and is not endorsed by RustDesk/Purslane.
 
 
-### Device ownership safeguards (1.6.1)
+### Device identity and accounts (1.7 preview)
 
-Existing device IDs cannot be re-registered by another account (HTTP 409).
-Sessions of disabled users are rejected.
+A rendezvous ID identifies one remote host, not a MirvDesk API account.
+Multiple API accounts may sign in from the same host and each receives a
+separate address book. The first account remains the legacy display owner
+of the device row; `user_devices` stores additional account relationships.
+Signing in with another account does not replace the original device
+metadata or modify its groups. Existing device records are migrated.
 
-Initial enrollment still relies on the self-reported peer ID; verifying
-device ownership cryptographically and enforcing device-group permissions
-during connection establishment remain future security work. Group
-visibility is **not** an access-control boundary for the RustDesk transport.
+Sessions of disabled accounts are rejected. Address-book groups only
+control visibility: **they do not grant or restrict RustDesk transport
+connections**, whose password/approval checks remain independent.
+A reported ID is not proof of possession of the remote host.
