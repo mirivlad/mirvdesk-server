@@ -68,10 +68,13 @@ func (c *child) stop() {
 }
 
 type state struct {
-	hbbs         *child
-	hbbr         *child
-	store        *store
-	loginLimiter loginAttemptLimiter
+	hbbs              *child
+	hbbr              *child
+	store             *store
+	loginLimiter      loginAttemptLimiter
+	rendezvousDataDir string
+	challengeMu       sync.Mutex
+	challenges        map[string]deviceNonce
 }
 
 func (s *state) handler() http.Handler {
@@ -109,6 +112,8 @@ func (s *state) handler() http.Handler {
 	mux.HandleFunc("GET /api/device-group/accessible", s.handleAccessibleDeviceGroups)
 	mux.HandleFunc("GET /api/users", s.handleAccessibleUsers)
 	mux.HandleFunc("GET /api/peers", s.handleAccessiblePeers)
+	mux.HandleFunc("GET /api/device-registry/challenge", s.handleDeviceChallenge)
+	mux.HandleFunc("POST /api/device-registry/heartbeat", s.handleDeviceHeartbeat)
 	s.registerAdminRoutes(mux)
 	return mux
 }
@@ -149,7 +154,8 @@ func main() {
 		log.Fatalf("start hbbs: %v", err)
 	}
 
-	st := &state{hbbs: hbbs, hbbr: hbbr, store: stg}
+	st := &state{hbbs: hbbs, hbbr: hbbr, store: stg, rendezvousDataDir: dataDir}
+	logHBBSRegistrySync(stg, dataDir)
 	api := &http.Server{
 		Addr:              env("MIRVDESK_API_ADDR", "127.0.0.1:21114"),
 		Handler:           st.handler(),
@@ -163,6 +169,18 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				logHBBSRegistrySync(stg, dataDir)
+			}
+		}
+	}()
 	var reason error
 	select {
 	case <-ctx.Done():
