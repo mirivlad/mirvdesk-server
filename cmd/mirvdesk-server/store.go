@@ -153,7 +153,10 @@ WHERE s.device_id<>''`)
 	}
 	_, err = s.db.Exec(`INSERT OR IGNORE INTO device_group_devices(group_id,device_id)
 SELECT group_id,id FROM devices WHERE group_id IS NOT NULL`)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.migrateDeviceRegistry()
 }
 func (s *store) userCount() (int, error) {
 	var n int
