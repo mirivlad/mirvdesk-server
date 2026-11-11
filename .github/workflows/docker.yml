@@ -35,6 +35,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect release version
+        id: release_version
+        shell: bash
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          version=unreleased
+          IFS= read -r first_line <<< "$COMMIT_MESSAGE"
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" && "$first_line" =~ ^Release[[:space:]]v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/metadata-action@v5
         id: meta
         with:
@@ -43,6 +55,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=semver,pattern={{version}}
+            type=raw,value=${{ steps.release_version.outputs.version }},enable=${{ steps.release_version.outputs.version != 'unreleased' }},priority=700
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -51,5 +64,33 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.meta.outputs.version }}
             RUSTDESK_SERVER_VERSION=1.1.16
+
+  release:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Release v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          IFS= read -r first_line <<< "$COMMIT_MESSAGE"
+          if [[ ! "$first_line" =~ ^Release[[:space:]]v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Invalid release version" >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          test -f "docs/RELEASE_${version}.md"
+          if gh release view "v${version}" >/dev/null 2>&1; then
+            echo "Release v${version} already exists"
+            exit 0
+          fi
+          gh release create "v${version}" --target "$GITHUB_SHA" --title "MirvDesk Server v${version}" --notes-file "docs/RELEASE_${version}.md"
+
