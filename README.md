@@ -49,9 +49,18 @@ docker exec -it mirvdesk-server mirvdesk-admin device-group 123456789 Operations
 docker exec -it mirvdesk-server mirvdesk-admin group-add-user Operations alice
 ```
 
-A device is registered automatically after its owner logs in from that MirvDesk client. `devices` shows known peer IDs, owners and current group assignment. Use `device-group PEER_ID none` to clear an assignment and `group-remove-user GROUP LOGIN` to revoke access. Administrators can see all registered devices; regular users see their own devices plus devices in groups granted to them.
+The server maintains a registry of devices, including those discovered through hbbs, and permits multiple MirvDesk accounts per host. Administrators can rename devices, write notes and assign multiple groups through the web panel. User and group visibility does not replace the transport-layer password or approval checks.
 
-The 1.6 group storage is a baseline and currently assigns at most one group to a device. The next administration milestone migrates device/group membership to many-to-many, so a device may belong to several groups and a user may see several groups. This transitional schema is not intended to become a permanent API contract.
+Devices support many-to-many group membership; administrators may assign a device to several groups, while older clients retain a single-group compatibility view.
+
+## Web administration (1.7.4)
+
+The administrator panel is built into the MirvDesk Server API container. Open
+**https://YOUR-API-HOST/admin/** through your existing HTTPS reverse proxy and
+sign in with an administrator account. Manage users, devices, device groups,
+group membership and audit history in your browser. The panel does not require
+a second service, database or container. Details, backup and deployment steps:
+[Web administration](docs/WEB_ADMIN.md).
 
 ## API available now
 
@@ -76,7 +85,7 @@ Passwords are stored with Argon2id. Session tokens are random 256-bit values; on
 
 ## Current status
 
-The single-container runtime, RustDesk Server OSS 1.1.16 integration, local administrator utility, account login, current-user lookup, logout, runtime discovery, personal address-book synchronization, registered devices and Accessible devices / Groups are implemented. Shared address books remain future work.
+The single-container runtime, RustDesk Server OSS 1.1.16 integration, local administrator utility, account login, current-user lookup, logout, runtime discovery, personal address-book synchronization, device registry, authenticated web administration and Accessible devices / Groups are implemented. Shared address books remain future work.
 
 ## Runtime discovery
 
@@ -86,7 +95,7 @@ Behind nginx, the server derives its public URL from `Host` and `X-Forwarded-Pro
 
 ## Roadmap and upstream compatibility
 
-The cross-repository roadmap is maintained in the client repository: [MirvDesk roadmap](https://github.com/mirivlad/mirvdesk-client/blob/main/docs/ROADMAP.md). The planned primary administration UI is an authenticated window inside the MirvDesk desktop client, backed by a server-side admin API. A web admin UI, if added later, should reuse that same API rather than duplicate business logic.
+The cross-repository roadmap is maintained in the client repository: [MirvDesk roadmap](https://github.com/mirivlad/mirvdesk-client/blob/main/docs/ROADMAP.md). The desktop client and the built-in web administration interface reuse the same administrator API, with server-side authorization; neither duplicates authorization or account-management logic.
 
 MirvDesk-specific management endpoints should be namespaced so they do not unnecessarily collide with future RustDesk APIs. Existing RustDesk-compatible endpoints used by Accessible devices / Groups should retain their compatible shapes where practical. See the client-side [upstream compatibility policy](https://github.com/mirivlad/mirvdesk-client/blob/main/docs/UPSTREAM_COMPATIBILITY.md).
 
@@ -96,7 +105,7 @@ RustDesk Server OSS is developed at https://github.com/rustdesk/rustdesk-server 
 MirvDesk Server is independent from and is not endorsed by RustDesk/Purslane.
 
 
-### Device identity and accounts (1.7 preview)
+### Device identity and accounts (1.7+)
 
 A rendezvous ID identifies one remote host, not a MirvDesk API account.
 Multiple API accounts may sign in from the same host and each receives a

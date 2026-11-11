@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>MirvDesk — Администрирование</title>
+  <link rel="stylesheet" href="/admin/assets/app.css">
+  <script src="/admin/assets/app.js" defer></script>
+</head>
+<body>
+  <section id="loginView" class="login-view">
+    <div class="login-brand"><span class="brand-mark">M</span><span>MirvDesk <small>SERVER</small></span></div>
+    <div class="login-card">
+      <div class="eyebrow">Центр управления</div>
+      <h1>Добро пожаловать</h1>
+      <p class="muted">Войдите под учётной записью администратора MirvDesk.</p>
+      <form id="loginForm">
+        <label for="username">Логин</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <p id="loginError" class="form-error" role="alert" hidden></p>
+        <button class="primary full" type="submit" id="loginButton">Войти в панель</button>
+      </form>
+      <div class="login-foot">Для первого запуска создайте администратора командой <code>mirvdesk-admin</code> внутри контейнера.</div>
+    </div>
+    <p class="login-copyright">MirvDesk · Self-hosted remote desktop</p>
+  </section>
+
+  <div id="appView" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-top"><span class="brand-mark">M</span><span>MirvDesk <small>CONTROL</small></span></div>
+      <div class="sidebar-label">Управление</div>
+      <nav aria-label="Разделы">
+        <button data-view="overview" class="nav-item active"><span class="nav-icon">◫</span>Обзор</button>
+        <button data-view="users" class="nav-item"><span class="nav-icon">♙</span>Пользователи</button>
+        <button data-view="devices" class="nav-item"><span class="nav-icon">▣</span>Устройства</button>
+        <button data-view="groups" class="nav-item"><span class="nav-icon">▦</span>Группы доступа</button>
+        <button data-view="audit" class="nav-item"><span class="nav-icon">◷</span>Журнал действий</button>
+        <button data-view="server" class="nav-item"><span class="nav-icon">⚙</span>Сервер</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-user"><span class="avatar" id="avatar">A</span><span><strong id="accountName">Администратор</strong><small>Администратор</small></span></div>
+        <button id="logout" class="logout">Выйти из аккаунта</button>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><div class="eyebrow" id="breadcrumb">MIRVDESK / ОБЗОР</div><h1 id="viewTitle">Обзор</h1><p id="viewSubtitle" class="muted">Состояние системы и активность</p></div>
+        <div class="toolbar"><input type="search" id="search" placeholder="Поиск по разделу" aria-label="Поиск по разделу"><button id="refresh" class="secondary">Обновить</button></div>
+      </header>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="content" aria-live="polite"></div>
+      <footer class="main-footer">MirvDesk Server · Собственная инфраструктура, ваши данные под вашим контролем</footer>
+    </main>
+  </div>
+  <dialog id="modal"><div class="modal-inner"><header><h2 id="modalTitle">Редактирование</h2><button type="button" class="icon-button" id="modalClose" aria-label="Закрыть">×</button></header><div id="modalBody"></div></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

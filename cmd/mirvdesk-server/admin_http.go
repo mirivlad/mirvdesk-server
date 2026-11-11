@@ -29,12 +29,14 @@ func (s *state) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/users/{username}/password", s.adminOnly(s.adminResetUserPassword))
 	mux.HandleFunc("GET /api/admin/audit", s.adminOnly(s.adminListAudit))
 	mux.HandleFunc("GET /api/admin/groups", s.adminOnly(s.adminListGroups))
+	mux.HandleFunc("GET /api/admin/groups/{group}/members", s.adminOnly(s.adminGroupMembers))
 	mux.HandleFunc("POST /api/admin/groups", s.adminOnly(s.adminCreateGroup))
 	mux.HandleFunc("PUT /api/admin/groups/{group}", s.adminOnly(s.adminRenameGroup))
 	mux.HandleFunc("DELETE /api/admin/groups/{group}", s.adminOnly(s.adminDeleteGroup))
 	mux.HandleFunc("POST /api/admin/groups/{group}/members", s.adminOnly(s.adminAddGroupMember))
 	mux.HandleFunc("DELETE /api/admin/groups/{group}/members/{username}", s.adminOnly(s.adminRemoveGroupMember))
 	mux.HandleFunc("GET /api/admin/devices", s.adminOnly(s.adminListDevices))
+	mux.HandleFunc("PUT /api/admin/devices/{peer}/display-name", s.adminOnly(s.adminSetDeviceDisplayName))
 	mux.HandleFunc("PUT /api/admin/devices/{peer}/group", s.adminOnly(s.adminSetDeviceGroup))
 	mux.HandleFunc("GET /api/admin/devices/{peer}/groups", s.adminOnly(s.adminGetDeviceGroups))
 	mux.HandleFunc("PUT /api/admin/devices/{peer}/note", s.adminOnly(s.adminSetDeviceNote))
@@ -65,7 +67,17 @@ func (s *state) adminListGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *state) adminListDevices(w http.ResponseWriter, r *http.Request) {
-	devices, err := s.store.listDevices()
+	u, _, err := s.authenticatedUser(r)
+	if err != nil {
+		writeAPIError(w, http.StatusUnauthorized, "login required")
+		return
+	}
+	scope := r.URL.Query().Get("scope")
+	if scope != "" && scope != "all" && scope != "mine" && scope != "accessible" {
+		writeAPIError(w, http.StatusBadRequest, "unknown inventory scope")
+		return
+	}
+	devices, err := s.store.listAdminDevicesForAccount(u.ID, scope)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list devices")
 		return

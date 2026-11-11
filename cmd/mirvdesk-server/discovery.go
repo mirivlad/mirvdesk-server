@@ -73,6 +73,6 @@ func (s *state) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		APIServer:    strings.TrimRight(apiServer, "/"),
 		Key:          strings.TrimSpace(string(keyBytes)),
 		Version:      version,
-		Capabilities: []string{"groups", "admin-api"},
+		Capabilities: []string{"groups", "admin-api", "device-registry-v1"},
 	})
 }

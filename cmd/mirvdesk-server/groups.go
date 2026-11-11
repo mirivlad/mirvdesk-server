@@ -25,6 +25,12 @@ type peerPayload struct {
 	DeviceGroupNames []string       `json:"device_group_names,omitempty"`
 	Note             string         `json:"note"`
 	LastAccountLogin int64          `json:"last_account_login"`
+	DisplayName      string         `json:"display_name"`
+	FirstSeenAt      int64          `json:"first_seen_at"`
+	LastSeenAt       int64          `json:"last_seen_at"`
+	Presence         string         `json:"presence"`
+	Online           bool           `json:"online"`
+	Unassigned       bool           `json:"unassigned"`
 }
 
 func parsePage(r *http.Request) (current, pageSize int) {
@@ -78,8 +84,9 @@ func (s *store) upsertDevice(ownerID int64, peerID, uuid string, info map[string
 	_, err = tx.Exec(`INSERT INTO devices(peer_id,owner_user_id,uuid,info,status,updated_at)
 VALUES(?,?,?,?,1,?)
 ON CONFLICT(peer_id) DO UPDATE SET updated_at=excluded.updated_at,
-status=1, uuid=CASE WHEN devices.owner_user_id=excluded.owner_user_id THEN excluded.uuid ELSE devices.uuid END,
-info=CASE WHEN devices.owner_user_id=excluded.owner_user_id THEN excluded.info ELSE devices.info END`, peerID, ownerID, uuid, string(raw), time.Now().Unix())
+status=1, owner_user_id=COALESCE(devices.owner_user_id,excluded.owner_user_id),
+uuid=CASE WHEN devices.owner_user_id IS NULL OR devices.owner_user_id=excluded.owner_user_id THEN excluded.uuid ELSE devices.uuid END,
+info=CASE WHEN devices.owner_user_id IS NULL OR devices.owner_user_id=excluded.owner_user_id THEN excluded.info ELSE devices.info END`, peerID, ownerID, uuid, string(raw), time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -292,13 +299,33 @@ func (s *store) listDeviceGroups() ([]deviceGroup, error) {
 	return out, rows.Err()
 }
 
-func (s *store) listDevices() ([]peerPayload, error) {
-	return s.queryPeers(`SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,d.updated_at,
+const registryPeerSelect = `SELECT d.peer_id,d.info,d.status,COALESCE(u.username,''),COALESCE(g.name,''),d.note,CASE WHEN d.owner_user_id IS NULL THEN 0 ELSE d.updated_at END,
 COALESCE((SELECT json_group_array(name) FROM (
  SELECT g2.name AS name FROM device_group_devices link2 JOIN device_groups g2 ON g2.id=link2.group_id
- WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]')
-FROM devices d JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON g.id=d.group_id
-ORDER BY u.username COLLATE NOCASE,d.peer_id`)
+ WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]'),d.display_name,d.first_seen_at,d.seen_at
+FROM devices d LEFT JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON g.id=d.group_id
+`
+
+func (s *store) listDevices() ([]peerPayload, error) {
+	return s.queryPeers(registryPeerSelect + " ORDER BY u.username COLLATE NOCASE,d.peer_id")
+}
+
+func (s *store) listAdminDevicesForAccount(userID int64, scope string) ([]peerPayload, error) {
+	base := registryPeerSelect
+	switch scope {
+	case "", "all":
+	case "mine":
+		base += ` WHERE EXISTS(SELECT 1 FROM user_devices ud WHERE ud.device_id=d.id AND ud.user_id=?)`
+		return s.queryPeers(base+" ORDER BY d.peer_id", userID)
+	case "accessible":
+		base += ` WHERE EXISTS(SELECT 1 FROM user_devices ud WHERE ud.device_id=d.id AND ud.user_id=?)
+              OR EXISTS(SELECT 1 FROM device_group_devices dg JOIN device_group_members gm ON gm.group_id=dg.group_id
+                WHERE dg.device_id=d.id AND gm.user_id=?)`
+		return s.queryPeers(base+" ORDER BY d.peer_id", userID, userID)
+	default:
+		return nil, errors.New("unknown inventory scope")
+	}
+	return s.queryPeers(base + " ORDER BY d.peer_id")
 }
 
 func (s *store) accessibleGroups(u user) ([]deviceGroup, error) {
@@ -363,11 +390,11 @@ WHERE u2.status=1 AND (u2.id=? OR EXISTS(
 }
 
 func (s *store) accessiblePeers(u user) ([]peerPayload, error) {
-	base := `SELECT d.peer_id,d.info,d.status,u.username,COALESCE(g.name,''),d.note,d.updated_at,
+	base := `SELECT d.peer_id,d.info,d.status,COALESCE(u.username,''),COALESCE(g.name,''),d.note,CASE WHEN d.owner_user_id IS NULL THEN 0 ELSE d.updated_at END,
 COALESCE((SELECT json_group_array(name) FROM (
  SELECT g2.name AS name FROM device_group_devices link2 JOIN device_groups g2 ON g2.id=link2.group_id
- WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]')
-FROM devices d JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON g.id=d.group_id`
+ WHERE link2.device_id=d.id ORDER BY g2.name COLLATE NOCASE)), '[]'),d.display_name,d.first_seen_at,d.seen_at
+FROM devices d LEFT JOIN users u ON u.id=d.owner_user_id LEFT JOIN device_groups g ON g.id=d.group_id`
 	if u.IsAdmin {
 		return s.queryPeers(base + ` WHERE d.status=1 ORDER BY u.username COLLATE NOCASE,d.peer_id`)
 	}
@@ -385,8 +412,17 @@ func (s *store) queryPeers(query string, args ...any) ([]peerPayload, error) {
 		var p peerPayload
 		var raw string
 		var groupNamesJSON string
-		if err := rows.Scan(&p.ID, &raw, &p.Status, &p.UserName, &p.DeviceGroupName, &p.Note, &p.LastAccountLogin, &groupNamesJSON); err != nil {
+		if err := rows.Scan(&p.ID, &raw, &p.Status, &p.UserName, &p.DeviceGroupName, &p.Note, &p.LastAccountLogin, &groupNamesJSON, &p.DisplayName, &p.FirstSeenAt, &p.LastSeenAt); err != nil {
 			return nil, err
+		}
+		p.Unassigned = p.UserName == ""
+		p.Presence = "unknown"
+		if p.LastSeenAt > 0 {
+			p.Presence = "offline"
+			if time.Now().Unix()-p.LastSeenAt <= int64(heartbeatWindow.Seconds()) {
+				p.Online = true
+				p.Presence = "online"
+			}
 		}
 		p.User = p.UserName
 		p.Info = map[string]any{}
