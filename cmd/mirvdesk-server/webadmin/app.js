@@ -25,7 +25,15 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { box.hidden = true; }, 4200);
   }
+  function setPasswordVisible(input, toggle, visible) {
+    input.type = visible ? 'text' : 'password';
+    toggle.textContent = visible ? 'Скрыть' : 'Показать';
+    toggle.setAttribute('aria-label', visible ? 'Скрыть пароль' : 'Показать пароль');
+    toggle.title = visible ? 'Скрыть пароль' : 'Показать пароль';
+    toggle.setAttribute('aria-pressed', String(visible));
+  }
   function showLogin(message) {
+    setPasswordVisible(el('password'), document.querySelector('#loginView .password-toggle'), false);
     el('appView').hidden = true;
     el('loginView').hidden = false;
     el('password').value = '';
@@ -263,7 +271,20 @@
         });
       } else if (field.type === 'textarea') { input.rows = 3; }
       input.value = field.value === undefined ? '' : field.value;
-      form.appendChild(input);
+      if (field.type === 'password') {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'password-field';
+        var toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'password-toggle';
+        toggle.dataset.passwordTarget = input.id;
+        setPasswordVisible(input, toggle, false);
+        wrapper.appendChild(input);
+        wrapper.appendChild(toggle);
+        form.appendChild(wrapper);
+      } else {
+        form.appendChild(input);
+      }
       if (field.hint) {
         var p = document.createElement('p');
         p.className = 'hint'; p.textContent = field.hint;
@@ -396,6 +417,12 @@
     el('modal').showModal();
   }
   document.addEventListener('click', function (event) {
+    var toggle = event.target.closest('button[data-password-target]');
+    if (toggle) {
+      var input = document.getElementById(toggle.dataset.passwordTarget);
+      if (input) setPasswordVisible(input, toggle, input.type === 'password');
+      return;
+    }
     var nav = event.target.closest('[data-view]');
     if (nav) { navigate(nav.dataset.view); return; }
     var b = event.target.closest('button[data-action]');

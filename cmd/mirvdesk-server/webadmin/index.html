@@ -19,7 +19,10 @@
         <label for="username">Логин</label>
         <input id="username" name="username" autocomplete="username" required autofocus>
         <label for="password">Пароль</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <div class="password-field">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="password-toggle" data-password-target="password" aria-label="Показать пароль" title="Показать пароль" aria-pressed="false">Показать</button>
+        </div>
         <p id="loginError" class="form-error" role="alert" hidden></p>
         <button class="primary full" type="submit" id="loginButton">Войти в панель</button>
       </form>

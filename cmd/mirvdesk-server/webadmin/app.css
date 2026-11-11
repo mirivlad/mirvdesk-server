@@ -23,3 +23,10 @@ dialog{border:1px solid #405479;background:#18243b;color:#edf3ff;border-radius:1
 .toast{position:fixed;bottom:25px;right:25px;max-width:min(420px,90vw);padding:14px 18px;background:#1f5f54;border:1px solid #62bba7;color:#effffb;border-radius:10px;box-shadow:0 16px 40px #0009;z-index:10}.toast.bad{background:#703845;border-color:#f28b99}.loading{color:#8ea5cb;padding:28px}.flex-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 @media(max-width:1130px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.panels{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column}.toolbar{width:100%}.toolbar input{flex:1}}
 @media(max-width:740px){.app-shell{display:block}.sidebar{position:relative;height:auto;border-right:0;border-bottom:1px solid #2b3b55;padding:15px}.sidebar-top{padding:0 0 12px}.sidebar-label,.sidebar-bottom{display:none}.sidebar nav{display:flex;gap:4px;overflow-x:auto}.nav-item{width:auto;white-space:nowrap;padding:10px;font-size:12px}.nav-icon{display:none}.main{padding:25px 15px}.metrics{gap:9px}.metric{padding:16px}.metric .number{font-size:24px}.toolbar{flex-wrap:wrap}.toolbar input{min-width:0}.panel{padding:17px}.login-card{padding:25px}.section-head{align-items:flex-start}.section-head h2{font-size:17px}}
+
+/* A visible, keyboard-accessible password toggle shared by login and dialogs. */
+.password-field{position:relative;display:flex;align-items:center}
+.password-field input{padding-right:100px;min-width:0}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-width:80px;padding:7px 8px;background:transparent;border:0;border-radius:7px;color:#9fc5ff;font-size:12px;font-weight:700}
+.password-toggle:hover{background:#253c61;color:#eef5ff}
+.password-toggle:focus-visible{outline:2px solid #5892ff;outline-offset:1px}
